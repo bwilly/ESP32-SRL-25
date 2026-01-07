@@ -84,7 +84,7 @@ std::map<String, String *> paramToVariableMap = {
     // {"pinAcs", &pinAcs},
     // {"mqtt-server", &mqttServer},
     // {"mqtt-port", &mqttPort},
-    // {"main-delay", &mainDelay}
+    {"main-delay", &mainDelay}
     // Note: For Boolean and other non-String types, you might need a different approach
 
 };

@@ -12,23 +12,44 @@ String makePath(const char *param)
 
 
 
-void loadPersistedValues()
+void loadLegacyPersistedValues()
 {
+    Serial.println("AppConfig: loading persisted values from SPIFFS");
+
     for (const auto &param : paramList)
     {
         String value = readFile(SPIFFS, param.spiffsPath.c_str());
 
-        // Assign value to the appropriate global String variable
+        Serial.print("  ");
+        Serial.print(param.name);
+        Serial.print(" <- ");
+        Serial.print(param.spiffsPath);
+        Serial.print(" = ");
+
         if (param.type == ParamMetadata::STRING)
         {
-            if (paramToVariableMap.find(param.name) != paramToVariableMap.end())
+            auto it = paramToVariableMap.find(param.name);
+            if (it != paramToVariableMap.end())
             {
-                *(paramToVariableMap[param.name]) = value;
+                *(it->second) = value;
+
+                // Print assigned value
+                Serial.println(value.length() ? value : "<empty>");
+            }
+            else
+            {
+                Serial.println("<no target variable>");
             }
         }
-
+        else
+        {
+            Serial.println("<unsupported type>");
+        }
     }
+
+    Serial.println("AppConfig: finished loading persisted values\n");
 }
+
 
 
 void parseHexToArray(const String &value, std::array<uint8_t, 8> intoArray)

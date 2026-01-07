@@ -47,7 +47,6 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 
 #include "WebRoutes.h"
 
-
 #include "ConfigLoad.h"
 #include "ConfigFetch.h"
 
@@ -91,12 +90,10 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 // #include <AsyncTelnetSerial.h>
 #include <AsyncTCP.h> // dependency for the async streams
 
-
-//#include "TelnetBridge.h" // stopped using this due to comppile conflcot in nov'25. would liek its feature returned for remote log monitor.
+// #include "TelnetBridge.h" // stopped using this due to comppile conflcot in nov'25. would liek its feature returned for remote log monitor.
 
 #include "ConfigModel.h"
 #include "ConfigStorage.h"
-
 
 #include "DeviceIdentity.h"
 
@@ -107,15 +104,12 @@ Logger logger;
 // extern AsyncTelnetSerial telnetSerial;
 // static AsyncTelnetSerial telnetSerial(&Serial);
 
-
 // ---- Remote debug configuration ----
 constexpr uint16_t SRL_TELNET_PORT = 23;
-constexpr const char* SRL_TELNET_PASSWORD = "saltmeadow";
+constexpr const char *SRL_TELNET_PASSWORD = "saltmeadow";
 
-constexpr const char* AP_SSID_PREFIX = "srl-sesp-";
-constexpr const char* AP_PASSWORD = "saltmeadow";  // >= 8 chars
-
-
+constexpr const char *AP_SSID_PREFIX = "srl-sesp-";
+constexpr const char *AP_PASSWORD = "saltmeadow"; // >= 8 chars
 
 // no good reason for these to be directives
 #define MDNS_DEVICE_NAME "sesp-"
@@ -209,7 +203,7 @@ static const float SCT_RATED_AMPS = 15.0f;
 static const float FEEDPUMP_ON_THRESHOLD_AMPS = 0.5f;
 
 // SCT pump state tracking
-static bool sctFirstRun      = true;
+static bool sctFirstRun = true;
 static bool sctLastPumpState = false;
 // your OO instance (just like envSensor)
 SctSensor sctSensor(PIN_SCT, SCT_RATED_AMPS);
@@ -592,7 +586,7 @@ void initSPIFFS()
   }
   Serial.println("SPIFFS mounted successfully");
 
-  loadPersistedValues();
+  loadLegacyPersistedValues();
 }
 
 bool initWiFi()
@@ -682,11 +676,10 @@ bool initWiFi()
   return true;
 }
 
-
 void AdvertiseServices()
 {
   Serial.println("AdvertiseServices on mDNS...");
-  const char* myName = gIdentity.name();
+  const char *myName = gIdentity.name();
 
   if (MDNS.begin(myName))
   {
@@ -705,7 +698,6 @@ void AdvertiseServices()
     }
   }
 }
-
 
 bool initDNS()
 {
@@ -828,58 +820,62 @@ void populateW1Addresses(uint8_t w1Address[6][8], String w1Name[6], const Sensor
   }
 }
 
-
 static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut)
 {
-    // 1) Parse JSON (sanity check)
-    StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> doc;
-    DeserializationError err = deserializeJson(doc, jsonBody);
-    if (err) {
-        errOut = String("JSON parse error: ") + err.c_str();
-        return false;
-    }
+  // 1) Parse JSON (sanity check)
+  StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> doc;
+  DeserializationError err = deserializeJson(doc, jsonBody);
+  if (err)
+  {
+    errOut = String("JSON parse error: ") + err.c_str();
+    return false;
+  }
 
-    // 2) Apply into a temp AppConfig so we can validate without clobbering gConfig
-    AppConfig tmp = gConfig; // start from current defaults
-    JsonObject root = doc.as<JsonObject>();
-    if (!configFromJson(root, tmp)) {
-        errOut = "configFromJson failed";
-        return false;
-    }
+  // 2) Apply into a temp AppConfig so we can validate without clobbering gConfig
+  AppConfig tmp = gConfig; // start from current defaults
+  JsonObject root = doc.as<JsonObject>();
+  if (!configFromJson(root, tmp))
+  {
+    errOut = "configFromJson failed";
+    return false;
+  }
 
-    // 3) Minimal bootstrap validation (tweak rules as you like)
-    //    If you want AP bootstrap to ONLY set wifi + identity, keep it strict here.
-    if (tmp.wifi.ssid.isEmpty()) {
-        errOut = "Missing required field: wifi.ssid";
-        return false;
-    }
-    if (tmp.wifi.pass.isEmpty()) {
-        errOut = "Missing required field: wifi.pass";
-        return false;
-    }
-    if (tmp.identity.locationName.isEmpty()) {
-        errOut = "Missing required field: identity.locationName";
-        return false;
-    }
+  // 3) Minimal bootstrap validation (tweak rules as you like)
+  //    If you want AP bootstrap to ONLY set wifi + identity, keep it strict here.
+  if (tmp.wifi.ssid.isEmpty())
+  {
+    errOut = "Missing required field: wifi.ssid";
+    return false;
+  }
+  if (tmp.wifi.pass.isEmpty())
+  {
+    errOut = "Missing required field: wifi.pass";
+    return false;
+  }
+  if (tmp.identity.locationName.isEmpty())
+  {
+    errOut = "Missing required field: identity.locationName";
+    return false;
+  }
 
-    // Default instance to locationName if omitted
-    if (tmp.identity.instance.isEmpty()) {
-        tmp.identity.instance = tmp.identity.locationName;
-    }
+  // Default instance to locationName if omitted
+  if (tmp.identity.instance.isEmpty())
+  {
+    tmp.identity.instance = tmp.identity.locationName;
+  }
 
-    // 4) Persist to /bootstrap.json in modular format
-if (!ConfigStorage::saveAppConfigToFile("/bootstrap.json", tmp)) {
+  // 4) Persist to /bootstrap.json in modular format
+  if (!ConfigStorage::saveAppConfigToFile("/bootstrap.json", tmp))
+  {
     errOut = "Failed to write /bootstrap.json";
     return false;
+  }
+
+  // 5) Also update live gConfig (optional but useful for immediate debug endpoints)
+  gConfig = tmp;
+
+  return true;
 }
-
-// 5) Also update live gConfig (optional but useful for immediate debug endpoints)
-gConfig = tmp;
-
-
-    return true;
-}
-
 
 // Entry point
 void setup()
@@ -898,8 +894,9 @@ void setup()
   // Decide which path: Station vs AP
   if (initWiFi()) // Station Mode
   {
+    // Start Telnet logger
     logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
-    logger.log("boot\n");
+    logger.log("Wifi and Telnet logger shoudl now be functioning.\n");
     setupStationMode();
   }
   else
@@ -918,7 +915,6 @@ void setup()
   }
 }
 
-
 void setupSpiffsAndConfig()
 {
   Serial.println("initSpiffs...");
@@ -927,16 +923,18 @@ void setupSpiffsAndConfig()
   // 1) Load BOOTSTRAP config first (new source of truth for wifi + identity + base URLs)
   if (ConfigStorage::loadAppConfigFromFile("/bootstrap.json", gConfig))
   {
-    logger.log("AppConfig: loaded BOOTSTRAP from /bootstrap.json into gConfig\n");
+    // no logger during bootstrap 
+    Serial.println("AppConfig: loaded BOOTSTRAP from /bootstrap.json into gConfig. Since this succeeded, shoudl skip legacy indie spiff files.\n");
   }
   else
   {
-    logger.log("AppConfig: no /bootstrap.json (or parse error). Will try legacy bootstrap migration next.\n");
+    // no logger during bootstrap
+    Serial.println("AppConfig: no /bootstrap.json (or parse error). Will try legacy bootstrap migration next.\n");
 
     // 1a) Legacy bootstrap migration path (one-time):
     // loadPersistedValues() reads /ssid.txt /pass.txt /location.txt /config-url.txt /ota-url.txt
     // We only migrate *bootstrap keys*.
-    loadPersistedValues();
+    loadLegacyPersistedValues();
 
     // If legacy has at least SSID + PASS + LOCATION, write bootstrap.json
     // NOTE: This assumes ssid/pass/locationName/configUrl/otaUrl are the legacy globals you already have.
@@ -949,33 +947,36 @@ void setupSpiffsAndConfig()
       tmp.identity.locationName = locationName;
 
       // Default instance to locationName (your rule)
-      if (tmp.identity.instance.isEmpty()) {
+      if (tmp.identity.instance.isEmpty())
+      {
         tmp.identity.instance = tmp.identity.locationName;
       }
 
       // If you have these in legacy:
       // configUrl = "http://salt-r420:9080/esp-config/salt"
       // otaUrl    = "http://.../firmware.bin"
-      if (configUrl.length() > 0) {
+      if (configUrl.length() > 0)
+      {
         tmp.remote.configBaseUrl = configUrl;
       }
-      if (otaUrl.length() > 0) {
+      if (otaUrl.length() > 0)
+      {
         tmp.remote.otaUrl = otaUrl;
       }
 
       if (ConfigStorage::saveAppConfigToFile("/bootstrap.json", tmp))
       {
-        logger.log("AppConfig: migrated legacy bootstrap params -> /bootstrap.json\n");
+        Serial.println("AppConfig: migrated legacy bootstrap params -> /bootstrap.json\n");
         gConfig = tmp;
       }
       else
       {
-        logger.log("AppConfig: FAILED to write /bootstrap.json during legacy migration\n");
+        Serial.println("AppConfig: FAILED to write /bootstrap.json during legacy migration\n");
       }
     }
     else
     {
-      logger.log("AppConfig: legacy bootstrap values incomplete; staying unconfigured (AP mode expected)\n");
+      Serial.println("AppConfig: legacy bootstrap values incomplete; staying unconfigured (AP mode expected)\n");
     }
   }
 
@@ -984,30 +985,30 @@ void setupSpiffsAndConfig()
   ssid = gConfig.wifi.ssid;
   pass = gConfig.wifi.pass;
   locationName = gConfig.identity.locationName;
-  
+
   gIdentity.init(MDNS_DEVICE_NAME, gConfig.identity.locationName);
-
-
 
   // configUrl in your code is now baseUrl like http://salt-r420:9080/esp-config/salt
   configUrl = gConfig.remote.configBaseUrl;
 
   // otaUrl legacy string (if still used anywhere)
   otaUrl = gConfig.remote.otaUrl;
+  mainDelay = gConfig.timing.mainDelayMs;
 
   // 3) Now load the effective runtime cache (mqtt/sensors/pins/etc)
-  if (loadEffectiveCacheFromFile(EFFECTIVE_CACHE_PATH))
-  {
-    Serial.println("ConfigLoad: EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' loaded and applied (overrides per-param SPIFFS files).");
-  }
-  else
-  {
-    Serial.println("ConfigLoad: no EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' (or parse error); continuing with bootstrap-only config.");
-  }
+  // if (loadEffectiveCacheFromFile(EFFECTIVE_CACHE_PATH))
+  // {
+  //   Serial.println("ConfigLoad: EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' loaded and applied (overrides per-param SPIFFS files).");
+  // }
+  // else
+  // {
+  //   Serial.println("ConfigLoad: no EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' (or parse error); continuing with bootstrap-only config.");
+  // }
 
   Serial.println(ssid);
   Serial.println(pass);
   Serial.println(locationName);
+  Serial.println(mainDelay);
 }
 
 void setupStationMode()
@@ -1023,11 +1024,11 @@ void setupStationMode()
   initZabbixServer();
 
   // @pattern
-if (gConfig.sensors.dht.enabled)
-{
-  logger.log("DHT: enabled via gConfig, starting sensor task\n");
-  initSensorTask(gConfig.sensors.dht.pin);
-}
+  if (gConfig.sensors.dht.enabled)
+  {
+    logger.log("DHT: enabled via gConfig, starting sensor task\n");
+    initSensorTask(gConfig.sensors.dht.pin);
+  }
 
   if (gConfig.sensors.acs.enabled)
   {
@@ -1035,19 +1036,18 @@ if (gConfig.sensors.dht.enabled)
   }
 
   // I2C pins for CHT832x
-  Wire.begin(32, 33); // todo:externalize: why is this here instead of inside the instantiation of the CHT sensor? Dec6'25 
+  Wire.begin(32, 33); // todo:externalize: why is this here instead of inside the instantiation of the CHT sensor? Dec6'25
   if (gConfig.sensors.cht.enabled)
   {
     envSensor.begin();
   }
 
-  
-  if(gConfig.sensors.sct.enabled) {
+  if (gConfig.sensors.sct.enabled)
+  {
     sctSensor.begin();
   }
 
-registerWebRoutesStation(server);
-
+  registerWebRoutesStation(server);
 
   // uses path like server.on("/update")
   // AsyncElegantOTA.begin(&server);
@@ -1066,24 +1066,21 @@ registerWebRoutesStation(server);
 
   server.begin();
 
+  // Set MQTT server using new AppConfig model (JSON-first, no legacy bridge)
+  logger.log("Setting MQTT server and port from gConfig.mqtt...\n");
+  logger.log(gConfig.mqtt.server);
+  logger.log(" : ");
+  logger.log(gConfig.mqtt.port);
+  logger.log("\n");
 
-    // Set MQTT server using new AppConfig model (JSON-first, no legacy bridge)
-    logger.log("Setting MQTT server and port from gConfig.mqtt...\n");
-    logger.log(gConfig.mqtt.server);
-    logger.log(" : ");
-    logger.log(gConfig.mqtt.port);
-    logger.log("\n");
-
-    if (gConfig.mqtt.server.length() > 0 && gConfig.mqtt.port > 0)
-    {
-      mqClient.setServer(gConfig.mqtt.server.c_str(), gConfig.mqtt.port);
-    }
-    else
-    {
-      logger.log("Error: MQTT config missing server or port in gConfig.mqtt; MQTT will be disabled\n");
-    }
-
-
+  if (gConfig.mqtt.server.length() > 0 && gConfig.mqtt.port > 0)
+  {
+    mqClient.setServer(gConfig.mqtt.server.c_str(), gConfig.mqtt.port);
+  }
+  else
+  {
+    logger.log("Error: MQTT config missing server or port in gConfig.mqtt; MQTT will be disabled\n");
+  }
 
   logger.log("\nEntry setup loop complete.");
 }
@@ -1133,13 +1130,12 @@ void setupAccessPointMode()
   logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
   logger.log("boot\n");
 
-
   if (!SPIFFS.begin(true))
   {
     Serial.println("SPIFFS is out of scope per bwilly!");
   }
   // Web Server Root URL
-registerWebRoutesAp(server);
+  registerWebRoutesAp(server);
 
   logger.log("Starting web server...\n");
   server.begin();
@@ -1147,7 +1143,7 @@ registerWebRoutesAp(server);
 
 void reconnectMQ()
 {
-  const char* clientId = gIdentity.name();
+  const char *clientId = gIdentity.name();
 
   while (!mqClient.connected())
   {
@@ -1165,7 +1161,6 @@ void reconnectMQ()
     }
   }
 }
-
 
 void publishSimpleMessage()
 {
@@ -1318,24 +1313,27 @@ void loop()
   logger.handle();
   logger.flush(16);
 
-  if (g_bootstrapPending) {
-  g_bootstrapPending = false;
+  if (g_bootstrapPending)
+  {
+    g_bootstrapPending = false;
 
-  String err;
-  bool ok = saveBootstrapConfigJson(g_bootstrapBody, err);
+    String err;
+    bool ok = saveBootstrapConfigJson(g_bootstrapBody, err);
 
-  if (ok) {
-    logger.log("Bootstrap: saved /config.json; rebooting\n");
-     logger.handle();
-  logger.flush(16);
-    delay(200);
-    ESP.restart();
-  } else {
-    logger.log("Bootstrap: rejected: " + err + "\n");
-    // optionally keep running AP mode so you can retry
+    if (ok)
+    {
+      logger.log("Bootstrap: saved /config.json; rebooting\n");
+      logger.handle();
+      logger.flush(16);
+      delay(200);
+      ESP.restart();
+    }
+    else
+    {
+      logger.log("Bootstrap: rejected: " + err + "\n");
+      // optionally keep running AP mode so you can retry
+    }
   }
-}
-
 
   // Defered OTA execution from main loop (not async_tcp task)
   if (g_otaRequested)
@@ -1435,39 +1433,35 @@ void loop()
       {
         logger.log("CHT832xSensor: read failed; skipping publish this cycle\n");
       }
-    } 
+    }
 
-    if(gConfig.sensors.sct.enabled) {
-          float amps = sctSensor.readCurrentACRms();
-          logger.logf("iot.sct.current %.3fA pin=%d rated=%.0f\n",
-            amps, PIN_SCT, SCT_RATED_AMPS);        
-          sctSensor.serialOutAdcDebug(); // for debug only  
+    if (gConfig.sensors.sct.enabled)
+    {
+      float amps = sctSensor.readCurrentACRms();
+      logger.logf("iot.sct.current %.3fA pin=%d rated=%.0f\n",
+                  amps, PIN_SCT, SCT_RATED_AMPS);
+      sctSensor.serialOutAdcDebug(); // for debug only
     }
   }
 
-if (gConfig.sensors.sct.enabled)
-{
+  if (gConfig.sensors.sct.enabled)
+  {
     float amps = fabsf(sctSensor.readCurrentACRms());
 
     bool pumpState = (amps > FEEDPUMP_ON_THRESHOLD_AMPS);
 
     if (sctFirstRun || pumpState != sctLastPumpState || pumpState)
     {
-        MessagePublisher::publishPumpState(
-            mqClient,
-            pumpState,
-            amps,
-            "feed-pump"
-        );
+      MessagePublisher::publishPumpState(
+          mqClient,
+          pumpState,
+          amps,
+          "feed-pump");
 
-        sctLastPumpState = pumpState;
-        sctFirstRun = false;
+      sctLastPumpState = pumpState;
+      sctFirstRun = false;
     }
-}
-
-
-
-
+  }
 
   if (gConfig.sensors.w1.enabled)
   {
