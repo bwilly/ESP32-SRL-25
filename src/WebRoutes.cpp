@@ -12,19 +12,16 @@
 #include "TemperatureReading.h"
 #include "TemperatureSensor.h"
 #include "BootstrapConfig.h"
-#include "ConfigLoad.h"
 
+// ---- Externs from elsewhere in your codebase ----
 
-// Things your routes reference (functions/globals defined elsewhere)
 extern String version;
 
-// From your main file / other modules:
-// extern char *MakeMine(const char *NameTemplate);
+// UI / sensors
 extern String printDS18b20(void);
 extern String SendHTML(TemperatureReading *readings, int maxReadings);
 extern String buildPrometheusMultiTemptExport(TemperatureReading *readings);
 extern const char *readAndGeneratePrometheusExport(const char *deviceName);
-
 extern float readDHTTemperature();
 
 // CHT sensor global you referenced (envSensor.read)
@@ -33,69 +30,78 @@ extern decltype(envSensor) envSensor;
 // W1 / temp sensor globals referenced by routes
 extern TemperatureSensor temptSensor;
 
-
-// POST handler you’re retiring later (we’ll keep it for now unless you say remove)
+// Legacy POST handler you’re retiring later (kept for now)
 extern void handlePostParameters(AsyncWebServerRequest *request);
 
-// Bootstrapping JSON save function you already have
+// Bootstrapping JSON save function (MUST have external linkage; see notes below)
 extern bool saveBootstrapConfigJson(const String &jsonBody, String &err);
 
-// Cache helper you already have
+// Cache helper
 extern bool clearConfigJsonCache(fs::FS &fs);
 
-// OTA scheduling globals you already added
+// OTA scheduling globals
 extern String g_otaUrl;
 extern bool g_otaRequested;
 
 // Legacy map still used by /ota/run currently
 extern std::map<String, String *> paramToVariableMap;
 
-// Your logger
-// extern BufferedLogger logger;
-
 // Your “processor” callback
 extern String processor(const String &var);
 
-// Your config cache path
-// extern const char *EFFECTIVE_CACHE_PATH;
+// Bootstrap “defer work out of async_tcp” flags/buffers
+extern volatile bool g_bootstrapPending;
+extern String g_bootstrapBody;
+extern String g_bootstrapErr;
 
+// -------------------------
+// /config/* endpoints
+// -------------------------
 
-// ---- Internal helpers ----
-
-static void registerBootstrapEndpoints(AsyncWebServer &server)
+static void registerConfigRoutesCommon(AsyncWebServer &server)
 {
     // POST raw JSON bootstrap config (curl-friendly)
     server.on(
         "/config/bootstrap",
         HTTP_POST,
         [](AsyncWebServerRequest *request) {
-            // Body handler responds; empty finalizer OK
+            // body handler responds; empty finalizer OK
         },
         NULL,
         [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-            static String body;
 
-
-if (total > 4096) { request->send(413, "text/plain", "Too large"); return; }
-
+            // Hard guard to avoid RAM blowups
+            if (total > 4096) {
+                request->send(413, "text/plain", "Too large");
+                return;
+            }
 
             if (index == 0) {
-  g_bootstrapBody = "";
-  g_bootstrapBody.reserve(total);
-  g_bootstrapErr = "";
-}
+                g_bootstrapBody = "";
+                g_bootstrapBody.reserve(total);
+                g_bootstrapErr = "";
+            }
 
-g_bootstrapBody += String((char*)data, len);
+            g_bootstrapBody += String((char *)data, len);
 
-if (index + len == total) {
-  g_bootstrapPending = true;
-  request->send(200, "text/plain", "Bootstrap received; applying shortly...");
-}
+            if (index + len == total) {
+                // Defer JSON parse + SPIFFS write out of the async callback
+                g_bootstrapPending = true;
+                request->send(200, "text/plain", "Bootstrap received; applying shortly...");
+            }
+        });
 
+    // View the locally stored working config: /config.json
+    server.on("/config/local", HTTP_GET, [](AsyncWebServerRequest *request) {
+        const char *path = "/config.json";
+        if (!SPIFFS.exists(path)) {
+            request->send(404, "text/plain", "No /config.json stored");
+            return;
         }
-    );
+        request->send(SPIFFS, path, "application/json");
+    });
 
-    // Optional: View the effective cache file
+    // View the effective cache file (NOTE: EFFECTIVE_CACHE_PATH comes from ConfigLoad.h)
     server.on("/config/effective-cache", HTTP_GET, [](AsyncWebServerRequest *request) {
         const char *path = EFFECTIVE_CACHE_PATH;
 
@@ -123,13 +129,20 @@ if (index + len == total) {
     server.on("/config/cache/clear", HTTP_GET, [](AsyncWebServerRequest *request) {
         bool ok = clearConfigJsonCache(SPIFFS);
         if (ok) {
-            request->send(200, "text/plain", "Config JSON cache cleared. It will not be used until remote config repopulates it.");
+            request->send(200, "text/plain",
+                          "Config JSON cache cleared. It will not be used until remote config repopulates it.");
         } else {
             request->send(500, "text/plain", "Failed to clear config JSON cache.");
         }
     });
+}
 
-    // Device restart
+// -------------------------
+// /device/* endpoints
+// -------------------------
+
+static void registerDeviceRoutes(AsyncWebServer &server)
+{
     server.on("/device/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "text/plain", "Restarting...");
         delay(300);
@@ -137,7 +150,11 @@ if (index + len == total) {
     });
 }
 
-static void registerOtaEndpoint(AsyncWebServer &server)
+// -------------------------
+// /ota/* endpoints
+// -------------------------
+
+static void registerOtaRoutes(AsyncWebServer &server)
 {
     server.on("/ota/run", HTTP_GET, [](AsyncWebServerRequest *request) {
 
@@ -163,14 +180,15 @@ static void registerOtaEndpoint(AsyncWebServer &server)
 
         request->send(200, "text/plain",
                       "OTA scheduled from " + fwUrl +
-                      "\nDevice will reboot if update succeeds.");
+                          "\nDevice will reboot if update succeeds.");
     });
 }
 
+// -------------------------
+// Station-mode UI endpoints
+// -------------------------
 
-// ---- Public API ----
-
-void registerWebRoutesStation(AsyncWebServer &server)
+static void registerStationUiRoutes(AsyncWebServer &server)
 {
     logger.log("set web root /index.html...\n");
 
@@ -180,13 +198,13 @@ void registerWebRoutesStation(AsyncWebServer &server)
     });
     server.serveStatic("/", SPIFFS, "/");
 
-
     // Route to Prometheus Metrics Exporter
     server.on("/metrics", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "text/html", readAndGeneratePrometheusExport(locationName.c_str()));
     });
 
-    server.on("/locationname", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/devicename", HTTP_GET, [](AsyncWebServerRequest *request) {
+        // keep endpoint name stable; returning locationName matches your newer pattern
         request->send(200, "text/html", locationName);
     });
 
@@ -195,7 +213,7 @@ void registerWebRoutesStation(AsyncWebServer &server)
     });
 
     server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
-        char buffer[32];  // Buffer to hold the string representation of the temperature
+        char buffer[32];
         float temperature = readDHTTemperature();
         snprintf(buffer, sizeof(buffer), "%.2f", temperature);
         request->send(200, "text/html", buffer);
@@ -203,9 +221,8 @@ void registerWebRoutesStation(AsyncWebServer &server)
 
     server.on("/cht/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
         char buffer[32];
-
         float chtTemp = NAN;
-        float chtHum  = NAN;
+        float chtHum = NAN;
 
         if (envSensor.read(chtTemp, chtHum)) {
             snprintf(buffer, sizeof(buffer), "%.2f", chtTemp);
@@ -217,9 +234,8 @@ void registerWebRoutesStation(AsyncWebServer &server)
 
     server.on("/cht/humidity", HTTP_GET, [](AsyncWebServerRequest *request) {
         char buffer[32];
-
         float chtTemp = NAN;
-        float chtHum  = NAN;
+        float chtHum = NAN;
 
         if (envSensor.read(chtTemp, chtHum)) {
             snprintf(buffer, sizeof(buffer), "%.2f", chtHum);
@@ -248,13 +264,7 @@ void registerWebRoutesStation(AsyncWebServer &server)
     server.on("/onewiretempt", HTTP_GET, [](AsyncWebServerRequest *request) {
         temptSensor.requestTemperatures();
         TemperatureReading *readings = temptSensor.getTemperatureReadings();
-
-        // Use the readings to send a response, assume SendHTML can handle TemperatureReading array
         request->send(200, "text/html", SendHTML(readings, MAX_READINGS));
-
-        // sensors.requestTemperatures();
-        // request->send(200, "text/html", SendHTML(sensors.getTempC(w1Address[0]), sensors.getTempC(w1Address[1]), sensors.getTempC(w1Address[2]))); });
-        // request->send(200, "text/html", SendHTMLxxx());
     });
 
     // todo: find out why some readings provide -127
@@ -264,32 +274,8 @@ void registerWebRoutesStation(AsyncWebServer &server)
         request->send(200, "text/html", buildPrometheusMultiTemptExport(readings));
     });
 
-    // i believe this is the in-mem representation
-    // server.on("/exportconfig", HTTP_GET, [](AsyncWebServerRequest *request) {
-    //     String json = buildConfigJsonFlat();
-    //     request->send(200, "application/json", json);
-    // });
-
-    // View the locally stored working config: /config.json
-    server.on("/config/local", HTTP_GET, [](AsyncWebServerRequest *request) {
-        const char *path = "/config.json";
-
-        if (!SPIFFS.exists(path)) {
-            request->send(404, "text/plain", "No /config.json stored");
-            return;
-        }
-
-        request->send(SPIFFS, path, "application/json");
-    });
-
-    // Bootstrap / cache endpoints
-    registerBootstrapEndpoints(server);
-
-    // OTA endpoint
-    registerOtaEndpoint(server);
-
-    // NOTE: legacy HTML POST handler remains for now.
-    // You said you want to retire it; we’ll remove this later after bootstrap.json migration is in.
+    // Legacy HTML POST handler remains for now.
+    // You said you want to retire it; we’ll remove after bootstrap JSON migration is solid.
     server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
         handlePostParameters(request);
         request->send(200, "text/plain", "Done. ESP will restart, connect to your AP");
@@ -298,19 +284,20 @@ void registerWebRoutesStation(AsyncWebServer &server)
     });
 }
 
-void registerWebRoutesAp(AsyncWebServer &server)
-{
-    // AP-mode helpers (cache + bootstrap + restart)
-    registerBootstrapEndpoints(server);
+// -------------------------
+// AP-mode UI endpoints
+// -------------------------
 
+static void registerApUiRoutes(AsyncWebServer &server)
+{
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(SPIFFS, "/wifimanager.html", "text/html", false, processor);
     });
 
     server.serveStatic("/", SPIFFS, "/"); // for things such as CSS
 
-    // NOTE: legacy HTML POST handler remains for now.
-    // You said you want JSON-only; we’ll remove this after bootstrap.json migration is solid.
+    // Legacy HTML POST handler remains for now.
+    // You said you want JSON-only; we’ll remove this after bootstrap migration is in.
     server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
         handlePostParameters(request);
         request->send(200, "text/plain", "Done. ESP will restart, connect to your AP");
@@ -318,4 +305,34 @@ void registerWebRoutesAp(AsyncWebServer &server)
         logger.log("Updated. Now restarting...\n");
         ESP.restart();
     });
+}
+
+// ---- Public API ----
+
+void registerWebRoutesStation(AsyncWebServer &server)
+{
+    // Keep groupings stable and obvious:
+    // 1) UI / metrics routes
+    registerStationUiRoutes(server);
+
+    // 2) /config/*
+    registerConfigRoutesCommon(server);
+
+    // 3) /device/*
+    registerDeviceRoutes(server);
+
+    // 4) /ota/*
+    registerOtaRoutes(server);
+}
+
+void registerWebRoutesAp(AsyncWebServer &server)
+{
+    // 1) /config/*
+    registerConfigRoutesCommon(server);
+
+    // 2) /device/*
+    registerDeviceRoutes(server);
+
+    // 3) AP UI routes
+    registerApUiRoutes(server);
 }
