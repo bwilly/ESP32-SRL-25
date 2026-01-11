@@ -1,3 +1,6 @@
+Renamed to ESP32-SRL-25 from ESP32_Wifi_OTA_PromExporter on Jan11'26
+
+
 Successfully uploaded and used this POC. Feb24'23
 
 Built and deployed using VS Code and PlatformIO plugin.
