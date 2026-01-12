@@ -871,24 +871,24 @@ static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut)
 
   // 3) Minimal bootstrap validation (tweak rules as you like)
   //    If you want AP bootstrap to ONLY set wifi + identity, keep it strict here.
-  if (tmp.wifi.ssid.isEmpty())
+  if (tmp.wifi.ssid.empty())
   {
     errOut = "Missing required field: wifi.ssid";
     return false;
   }
-  if (tmp.wifi.pass.isEmpty())
+  if (tmp.wifi.pass.empty())
   {
     errOut = "Missing required field: wifi.pass";
     return false;
   }
-  if (tmp.identity.locationName.isEmpty())
+  if (tmp.identity.locationName.empty())
   {
     errOut = "Missing required field: identity.locationName";
     return false;
   }
 
   // Default instance to locationName if omitted
-  if (tmp.identity.instance.isEmpty())
+  if (tmp.identity.instance.empty())
   {
     tmp.identity.instance = tmp.identity.locationName;
   }
@@ -970,13 +970,13 @@ void setupSpiffsAndConfig()
     if (ssid.length() > 0 && pass.length() > 0 && locationName.length() > 0)
     {
       AppConfig tmp = gConfig; // keep defaults
-      tmp.wifi.ssid = ssid;
-      tmp.wifi.pass = pass;
+      tmp.wifi.ssid = std::string(ssid.c_str());
+      tmp.wifi.pass = std::string(pass.c_str());
 
-      tmp.identity.locationName = locationName;
+      tmp.identity.locationName = std::string(locationName.c_str());
 
       // Default instance to locationName (your rule)
-      if (tmp.identity.instance.isEmpty())
+      if (tmp.identity.instance.empty())
       {
         tmp.identity.instance = tmp.identity.locationName;
       }
@@ -986,11 +986,11 @@ void setupSpiffsAndConfig()
       // otaUrl    = "http://.../firmware.bin"
       if (configUrl.length() > 0)
       {
-        tmp.remote.configBaseUrl = configUrl;
+        tmp.remote.configBaseUrl = std::string(configUrl.c_str());
       }
       if (otaUrl.length() > 0)
       {
-        tmp.remote.otaUrl = otaUrl;
+        tmp.remote.otaUrl = std::string(otaUrl.c_str());
       }
 
       if (ConfigStorage::saveAppConfigToFile("/bootstrap.json", tmp))
@@ -1011,17 +1011,17 @@ void setupSpiffsAndConfig()
 
   // 2) Apply bootstrap values into your legacy globals that initWiFi() expects
   // (You can delete these legacy globals later, but for now keep it explicit)
-  ssid = gConfig.wifi.ssid;
-  pass = gConfig.wifi.pass;
-  locationName = gConfig.identity.locationName;
+  ssid = String(gConfig.wifi.ssid.c_str());
+  pass = String(gConfig.wifi.pass.c_str());
+  locationName = String(gConfig.identity.locationName.c_str());
 
-  gIdentity.init(MDNS_DEVICE_NAME, gConfig.identity.locationName);
+  gIdentity.init(MDNS_DEVICE_NAME, gConfig.identity.locationName.c_str());
 
   // configUrl in your code is now baseUrl like http://salt-r420:9080/esp-config/salt
-  configUrl = gConfig.remote.configBaseUrl;
+  configUrl = String(gConfig.remote.configBaseUrl.c_str());
 
   // otaUrl legacy string (if still used anywhere)
-  otaUrl = gConfig.remote.otaUrl;
+  otaUrl = String(gConfig.remote.otaUrl.c_str());
   mainDelay = gConfig.timing.mainDelayMs;
 
   // 3) Now load the effective runtime cache (mqtt/sensors/pins/etc)
@@ -1097,9 +1097,9 @@ void setupStationMode()
 
   // Set MQTT server using new AppConfig model (JSON-first, no legacy bridge)
   logger.log("Setting MQTT server and port from gConfig.mqtt...\n");
-  logger.log(gConfig.mqtt.server);
+  logger.log(gConfig.mqtt.server.c_str());
   logger.log(" : ");
-  logger.log(gConfig.mqtt.port);
+  logger.log(String(gConfig.mqtt.port).c_str());
   logger.log("\n");
 
   if (gConfig.mqtt.server.length() > 0 && gConfig.mqtt.port > 0)
