@@ -61,7 +61,9 @@ String otaUrl;
 // bool w1Enabled;
 
 
-
+const char* FNAME_CONFIGREMOTE = "/config-remote.json";
+const char* FNAME_CONFIG = "/config.json";
+const char* FNAME_BOOTSTRAP = "/bootstrap.json";
 
 String mainDelay;
 uint8_t w1Address[6][8]; // accounted for in ParamHandler.cpp todo:workingHere: it was until my refactor. i bet now it doesn't work yet anymore Dec2, 2023. Yes me, i'd be correct. Nov11'24

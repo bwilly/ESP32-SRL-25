@@ -218,18 +218,33 @@ bool loadEffectiveCacheFromFile(const char* path)
     return applyConfigJsonDoc(doc);
 }
 
-bool clearConfigJsonCache(fs::FS &fs)
+bool clearConfigJsonCache(fs::FS &fs, const char* filePath)
 {
-    if (!fs.exists(EFFECTIVE_CACHE_PATH)) {
-        Serial.println("clearConfigJsonCache: no cache file to remove");
+    if (!filePath || filePath[0] == '\0') {
+        logger.log("clearConfigJsonCache: invalid cachePath\n");
+        return false;
+    }
+
+    logger.log("clearConfigJsonCache: path=");
+    logger.log(filePath);
+    logger.log("\n");
+
+    if (!fs.exists(filePath)) {
+        logger.log("clearConfigJsonCache: no cache file to remove: ");
+        logger.log(filePath);
+        logger.log("\n");
         return true;  // nothing to do, but state is as desired
     }
 
-    if (fs.remove(EFFECTIVE_CACHE_PATH)) {
-        Serial.println("clearConfigJsonCache: cache file removed");
+    if (fs.remove(filePath)) {
+        logger.log("clearConfigJsonCache: cache file removed: ");
+        logger.log(filePath);
+        logger.log("\n");
         return true;
     } else {
-        Serial.println("clearConfigJsonCache: failed to remove cache file");
+        logger.log("clearConfigJsonCache: failed to remove cache file: ");
+        logger.log(filePath);
+        logger.log("\n");
         return false;
     }
 }

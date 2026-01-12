@@ -94,6 +94,7 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 
 #include "ConfigModel.h"
 #include "ConfigStorage.h"
+#include "ConfigFile.h"
 
 #include "DeviceIdentity.h"
 
@@ -435,7 +436,7 @@ void tryFetchAndApplyRemoteConfig()
 
   // Load previous remote snapshot
   String previousRemoteJson;
-  bool hasPreviousRemote = readFileToString("/config-remote.json", previousRemoteJson);
+  bool hasPreviousRemote = readFileToString(FNAME_CONFIGREMOTE, previousRemoteJson);
   if (hasPreviousRemote)
   {
     logger.log("ConfigFetch: found previous remote snapshot /config-remote.json\n");
@@ -524,7 +525,7 @@ void tryFetchAndApplyRemoteConfig()
   logger.log("ConfigFetch: remote config changed; persisting and rebooting\n");
 
   // Persist remote snapshot
-  if (writeStringToFile("/config-remote.json", newRemoteJson))
+  if (writeStringToFile(FNAME_CONFIGREMOTE, newRemoteJson))
   {
     logger.log("ConfigFetch: wrote new remote snapshot to /config-remote.json\n");
   }
@@ -533,15 +534,43 @@ void tryFetchAndApplyRemoteConfig()
     logger.log("ConfigFetch: FAILED to write /config-remote.json\n");
   }
 
-  // Persist full effective config
-  if (saveEffectiveCacheToFile(EFFECTIVE_CACHE_PATH))
+  // // Persist full effective config
+  // if (saveLegacyEffectiveCacheToFile(EFFECTIVE_CACHE_PATH)) 
+  // {
+  //   logger.log("ConfigFetch: persisted merged effective config config.json; rebooting\n");
+  // }
+  // else
+  // {
+  //   logger.log("ConfigFetch: FAILED to persist merged config; rebooting anyway\n");
+  // }
+
+
+  String err;
+
+  if (!saveConfigJson(newRemoteJson, err))
   {
-    logger.log("ConfigFetch: persisted merged effective config EFFECTIVE_CACHE_PATH; rebooting\n");
+    logger.log("applyRemoteConfig: failed to save remote config to general json config\n");
+
+    if (err.length()) {
+        logger.log("applyRemoteConfig: error=");
+        logger.log(err);
+        logger.log("\n");
+    }
+    else {
+        logger.log("applyRemoteConfig: no error detail provided\n");
+    }
+
+    return;
   }
-  else
-  {
-    logger.log("ConfigFetch: FAILED to persist merged config to EFFECTIVE_CACHE_PATH; rebooting anyway\n");
-  }
+
+  logger.log("applyRemoteConfig: remote config saved successfully as general config\n");
+
+
+  // Allow logger + UART/WiFi buffers to flush
+  delay(500);
+
+  // Yield once more for good measure
+  yield();
 
   ESP.restart();
 }
@@ -865,7 +894,7 @@ static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut)
   }
 
   // 4) Persist to /bootstrap.json in modular format
-  if (!ConfigStorage::saveAppConfigToFile("/bootstrap.json", tmp))
+  if (!ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp))
   {
     errOut = "Failed to write /bootstrap.json";
     return false;

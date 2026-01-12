@@ -1,4 +1,4 @@
-#include "BootstrapConfig.h"
+#include "ConfigFile.h"
 
 #include <ArduinoJson.h>
 
@@ -6,11 +6,14 @@
 #include "ConfigStorage.h"    // ConfigStorage::saveAppConfigToFile/load...
 // #include "ConfigJson.h"       // configFromJson(...)
 // #include "ConfigCaps.h"       // APP_CONFIG_JSON_CAPACITY (or where it lives)
+#include "shared_vars.h"   
 
-extern AppConfig gConfig;     // or include the header that declares it
 
-bool saveBootstrapConfigJson(const String &jsonBody, String &errOut)
+bool saveConfigJson(const String &jsonBody, String &errOut)
 {
+    Serial.println(F("saveConfigJson: saving config.json... "));
+
+
     // 1) Parse JSON (sanity check)
     StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> doc;
     DeserializationError err = deserializeJson(doc, jsonBody);
@@ -18,6 +21,8 @@ bool saveBootstrapConfigJson(const String &jsonBody, String &errOut)
         errOut = String("JSON parse error: ") + err.c_str();
         return false;
     }
+
+    Serial.println(F("saveConfigJson: deserialized... "));
 
     // 2) Apply into a temp AppConfig so we can validate without clobbering gConfig
     AppConfig tmp = gConfig; // start from current defaults
@@ -27,27 +32,10 @@ bool saveBootstrapConfigJson(const String &jsonBody, String &errOut)
         return false;
     }
 
-    // 3) Minimal bootstrap validation
-    if (tmp.wifi.ssid.isEmpty()) {
-        errOut = "Missing required field: wifi.ssid";
-        return false;
-    }
-    if (tmp.wifi.pass.isEmpty()) {
-        errOut = "Missing required field: wifi.pass";
-        return false;
-    }
-    if (tmp.identity.locationName.isEmpty()) {
-        errOut = "Missing required field: identity.locationName";
-        return false;
-    }
-
-    // Default instance to locationName if omitted
-    if (tmp.identity.instance.isEmpty()) {
-        tmp.identity.instance = tmp.identity.locationName;
-    }
+    Serial.println(F("saveConfigJson: about to persist... "));
 
     // 4) Persist to /config.json in modular format
-    if (!ConfigStorage::saveAppConfigToFile("/config.json", tmp)) {
+    if (!ConfigStorage::saveAppConfigToFile(FNAME_CONFIG, tmp)) {
         errOut = "Failed to write /config.json";
         return false;
     }

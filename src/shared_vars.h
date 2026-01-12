@@ -51,6 +51,11 @@ extern volatile bool g_bootstrapPending;
 extern String g_bootstrapBody;
 extern String g_bootstrapErr;
 
+// Path for the on-disk effective config cache
+extern const char* FNAME_CONFIGREMOTE;
+extern const char* FNAME_CONFIG;
+extern const char* FNAME_BOOTSTRAP;
+
 
 // Variables to save values from HTML form
 extern String ssid;

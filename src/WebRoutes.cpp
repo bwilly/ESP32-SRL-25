@@ -11,7 +11,7 @@
 #include "ConfigLoad.h"
 #include "TemperatureReading.h"
 #include "TemperatureSensor.h"
-#include "BootstrapConfig.h"
+// #include "BootstrapConfig.h"
 
 // ---- Externs from elsewhere in your codebase ----
 
@@ -93,7 +93,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
 
     // View the locally stored working config: /config.json
     server.on("/config/local", HTTP_GET, [](AsyncWebServerRequest *request) {
-        const char *path = "/config.json";
+        const char *path = FNAME_CONFIG;
         if (!SPIFFS.exists(path)) {
             request->send(404, "text/plain", "No /config.json stored");
             return;
@@ -102,6 +102,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
     });
 
     // View the effective cache file (NOTE: EFFECTIVE_CACHE_PATH comes from ConfigLoad.h)
+    // legacy
     server.on("/config/effective-cache", HTTP_GET, [](AsyncWebServerRequest *request) {
         const char *path = EFFECTIVE_CACHE_PATH;
 
@@ -115,7 +116,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
 
     // View the last downloaded remote snapshot: /config-remote.json
     server.on("/config/remote", HTTP_GET, [](AsyncWebServerRequest *request) {
-        const char *path = "/config-remote.json";
+        const char *path = FNAME_CONFIGREMOTE;
 
         if (!SPIFFS.exists(path)) {
             request->send(404, "text/plain", "No /config-remote.json stored");
@@ -126,13 +127,44 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
     });
 
     // Clear cache helper
+    // legacy
     server.on("/config/cache/clear", HTTP_GET, [](AsyncWebServerRequest *request) {
-        bool ok = clearConfigJsonCache(SPIFFS);
+        bool ok = clearConfigJsonCache(SPIFFS, EFFECTIVE_CACHE_PATH);
         if (ok) {
             request->send(200, "text/plain",
-                          "Config JSON cache cleared. It will not be used until remote config repopulates it.");
+                          "legacy Config JSON cache cleared. It will not be used until remote config repopulates it.");
         } else {
             request->send(500, "text/plain", "Failed to clear config JSON cache.");
+        }
+    });
+
+    server.on("/config/delete/local", HTTP_GET, [](AsyncWebServerRequest *request) {
+        bool ok = clearConfigJsonCache(SPIFFS, FNAME_CONFIG);
+        if (ok) {
+            request->send(200, "text/plain",
+                          "Config.JSON deleted.");
+        } else {
+            request->send(500, "text/plain", "Failed to clear config JSON.");
+        }
+    });
+
+    server.on("/config/delete/bootstrap", HTTP_GET, [](AsyncWebServerRequest *request) {
+        bool ok = clearConfigJsonCache(SPIFFS, FNAME_BOOTSTRAP);
+        if (ok) {
+            request->send(200, "text/plain",
+                          "Config bootstrap deleted.");
+        } else {
+            request->send(500, "text/plain", "Failed to clear config JSON.");
+        }
+    });
+
+    server.on("/config/delete/remote", HTTP_GET, [](AsyncWebServerRequest *request) {
+        bool ok = clearConfigJsonCache(SPIFFS, FNAME_CONFIGREMOTE);
+        if (ok) {
+            request->send(200, "text/plain",
+                          "remote config stored locally has been deleted.");
+        } else {
+            request->send(500, "text/plain", "Failed to clear config JSON.");
         }
     });
 }

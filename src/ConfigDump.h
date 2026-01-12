@@ -7,10 +7,10 @@
 // - Uses paramToVariableMap for String params
 // - Uses paramToBoolMap for bools
 // - Emits W1 sensor hex + names as w1-1, w1-1-name ... w1-6, w1-6-name
-String buildEffectiveConfigJson();
+String buildLegacyEffectiveConfigJson();
 
 // Save the current in-memory config to the given path in SPIFFS.
 // Default is a backup file, but you can pass "/config.json" as well.
 // Returns true on success.
-bool saveEffectiveCacheToFile(const char* path);
+bool saveLegacyEffectiveCacheToFile(const char* path);
 

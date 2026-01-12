@@ -1,5 +1,4 @@
 // In HtmlVarProcessor.cpp
-#pragma once
 #include "shared_vars.h"
 #include "SpiffsHandler.h"
 #include "SPIFFS.h"
