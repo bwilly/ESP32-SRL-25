@@ -615,7 +615,7 @@ void initSPIFFS()
   }
   Serial.println("SPIFFS mounted successfully");
 
-  loadLegacyPersistedValues();
+  // loadLegacyPersistedValues();
 }
 
 bool initWiFi()
