@@ -14,9 +14,9 @@ bool saveConfigJson(const String &jsonBody, String &errOut)
     Serial.println(F("saveConfigJson: saving config.json... "));
 
 
-    // 1) Parse JSON (sanity check)
-    StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> doc;
-    DeserializationError err = deserializeJson(doc, jsonBody);
+    // 1) Parse JSON (sanity check) - use global reusable buffer
+    g_configSaveDoc.clear();
+    DeserializationError err = deserializeJson(g_configSaveDoc, jsonBody);
     if (err) {
         errOut = String("JSON parse error: ") + err.c_str();
         return false;
@@ -26,7 +26,7 @@ bool saveConfigJson(const String &jsonBody, String &errOut)
 
     // 2) Apply into a temp AppConfig so we can validate without clobbering gConfig
     AppConfig tmp = gConfig; // start from current defaults
-    JsonObject root = doc.as<JsonObject>();
+    JsonObject root = g_configSaveDoc.as<JsonObject>();
     if (!configFromJson(root, tmp)) {
         errOut = "configFromJson failed";
         return false;

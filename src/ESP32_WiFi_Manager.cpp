@@ -130,6 +130,9 @@ static const size_t REMOTE_JSON_CAPACITY = 4096;
 static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteMergedDoc;
 static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteTmpDoc;
 
+// Config save buffers (reusable, not allocated per-call)
+StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
+
 // BEFORE (something like this)
 // const char* version = APP_VERSION "::" APP_COMMIT_HASH ":: TelnetBridge";
 
@@ -894,7 +897,7 @@ static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut)
   }
 
   // 4) Persist to /bootstrap.json in modular format
-  if (!ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp))
+  if (!ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp, g_configSaveDoc))
   {
     errOut = "Failed to write /bootstrap.json";
     return false;
@@ -993,7 +996,7 @@ void setupSpiffsAndConfig()
         tmp.remote.otaUrl = std::string(otaUrl.c_str());
       }
 
-      if (ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp))
+      if (ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp, g_configSaveDoc))
       {
         Serial.println("AppConfig: migrated legacy bootstrap params -> /bootstrap.json\n");
         gConfig = tmp;

@@ -24,9 +24,9 @@ namespace ConfigStorage {
         return configFromJson(root, cfg);
     }
 
-    bool saveAppConfigToFile(const char *path, const AppConfig &cfg)
+    bool saveAppConfigToFile(const char *path, const AppConfig &cfg, JsonDocument &doc)
     {
-        StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> doc;
+        doc.clear();
         JsonObject root = doc.to<JsonObject>();
 
         configToJson(cfg, root);
@@ -43,6 +43,13 @@ namespace ConfigStorage {
 
         f.close();
         return true;
+    }
+
+    // Legacy version for backward compatibility (uses dynamic allocation)
+    bool saveAppConfigToFile(const char *path, const AppConfig &cfg)
+    {
+        DynamicJsonDocument doc(APP_CONFIG_JSON_CAPACITY);
+        return saveAppConfigToFile(path, cfg, doc);
     }
 
 } // namespace ConfigStorage
