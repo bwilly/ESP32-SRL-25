@@ -950,7 +950,7 @@ void setupSpiffsAndConfig()
   initSPIFFS();
 
   // 1) Load BOOTSTRAP config first (new source of truth for wifi + identity + base URLs)
-  if (ConfigStorage::loadAppConfigFromFile("/bootstrap.json", gConfig))
+  if (ConfigStorage::loadAppConfigFromFile(FNAME_BOOTSTRAP, gConfig))
   {
     // no logger during bootstrap 
     Serial.println("AppConfig: loaded BOOTSTRAP from /bootstrap.json into gConfig. Since this succeeded, shoudl skip legacy indie spiff files.\n");
@@ -993,7 +993,7 @@ void setupSpiffsAndConfig()
         tmp.remote.otaUrl = std::string(otaUrl.c_str());
       }
 
-      if (ConfigStorage::saveAppConfigToFile("/bootstrap.json", tmp))
+      if (ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp))
       {
         Serial.println("AppConfig: migrated legacy bootstrap params -> /bootstrap.json\n");
         gConfig = tmp;
