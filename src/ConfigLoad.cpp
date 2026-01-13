@@ -218,7 +218,7 @@ bool loadEffectiveCacheFromFile(const char* path)
     return applyConfigJsonDoc(doc);
 }
 
-bool clearConfigJsonCache(fs::FS &fs, const char* filePath)
+bool deleteJsonFile(fs::FS &fs, const char* filePath)
 {
     if (!filePath || filePath[0] == '\0') {
         logger.log("clearConfigJsonCache: invalid cachePath\n");

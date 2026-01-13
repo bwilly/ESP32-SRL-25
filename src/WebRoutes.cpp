@@ -129,7 +129,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
     // Clear cache helper
     // legacy
     server.on("/config/cache/clear", HTTP_GET, [](AsyncWebServerRequest *request) {
-        bool ok = clearConfigJsonCache(SPIFFS, EFFECTIVE_CACHE_PATH);
+        bool ok = deleteJsonFile(SPIFFS, EFFECTIVE_CACHE_PATH);
         if (ok) {
             request->send(200, "text/plain",
                           "legacy Config JSON cache cleared. It will not be used until remote config repopulates it.");
@@ -139,7 +139,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
     });
 
     server.on("/config/delete/local", HTTP_GET, [](AsyncWebServerRequest *request) {
-        bool ok = clearConfigJsonCache(SPIFFS, FNAME_CONFIG);
+        bool ok = deleteJsonFile(SPIFFS, FNAME_CONFIG);
         if (ok) {
             request->send(200, "text/plain",
                           "Config.JSON deleted.");
@@ -149,7 +149,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
     });
 
     server.on("/config/delete/bootstrap", HTTP_GET, [](AsyncWebServerRequest *request) {
-        bool ok = clearConfigJsonCache(SPIFFS, FNAME_BOOTSTRAP);
+        bool ok = deleteJsonFile(SPIFFS, FNAME_BOOTSTRAP);
         if (ok) {
             request->send(200, "text/plain",
                           "Config bootstrap deleted.");
@@ -159,7 +159,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
     });
 
     server.on("/config/delete/remote", HTTP_GET, [](AsyncWebServerRequest *request) {
-        bool ok = clearConfigJsonCache(SPIFFS, FNAME_CONFIGREMOTE);
+        bool ok = deleteJsonFile(SPIFFS, FNAME_CONFIGREMOTE);
         if (ok) {
             request->send(200, "text/plain",
                           "remote config stored locally has been deleted.");

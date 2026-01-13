@@ -15,4 +15,4 @@ bool loadConfigFromJsonString(const String &json);
 // bool loadConfigFromJsonFile(const char *path = "/config.json");
 bool loadEffectiveCacheFromFile(const char* path);
 
-bool clearConfigJsonCache(fs::FS &fs, const char* filePath);
+bool deleteJsonFile(fs::FS &fs, const char* filePath);
