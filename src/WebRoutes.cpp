@@ -62,7 +62,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
 {
     // POST raw JSON bootstrap config (curl-friendly)
     server.on(
-        "/config/bootstrap",
+        "/config/post/bootstrap",
         HTTP_POST,
         [](AsyncWebServerRequest *request) {
             // body handler responds; empty finalizer OK
@@ -92,7 +92,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
         });
 
     // View the locally stored working config: /config.json
-    server.on("/config/local", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/show/FNAME_CONFIG", HTTP_GET, [](AsyncWebServerRequest *request) {
         const char *path = FNAME_CONFIG;
         if (!SPIFFS.exists(path)) {
             request->send(404, "text/plain", "No /config.json stored");
@@ -103,7 +103,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
 
     // View the effective cache file (NOTE: EFFECTIVE_CACHE_PATH comes from ConfigLoad.h)
     // legacy
-    server.on("/config/effective-cache", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/show/EFFECTIVE_CACHE_PATH", HTTP_GET, [](AsyncWebServerRequest *request) {
         const char *path = EFFECTIVE_CACHE_PATH;
 
         if (!SPIFFS.exists(path)) {
@@ -115,7 +115,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
     });
 
     // View the last downloaded remote snapshot: /config-remote.json
-    server.on("/config/remote", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/show/FNAME_CONFIGREMOTE", HTTP_GET, [](AsyncWebServerRequest *request) {
         const char *path = FNAME_CONFIGREMOTE;
 
         if (!SPIFFS.exists(path)) {
@@ -128,7 +128,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
 
     // Clear cache helper
     // legacy
-    server.on("/config/cache/clear", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/delete/file/EFFECTIVE_CACHE_PATH", HTTP_GET, [](AsyncWebServerRequest *request) {
         bool ok = deleteJsonFile(SPIFFS, EFFECTIVE_CACHE_PATH);
         if (ok) {
             request->send(200, "text/plain",
@@ -138,7 +138,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
         }
     });
 
-    server.on("/config/delete/local", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/delete/file/FNAME_CONFIG", HTTP_GET, [](AsyncWebServerRequest *request) {
         bool ok = deleteJsonFile(SPIFFS, FNAME_CONFIG);
         if (ok) {
             request->send(200, "text/plain",
@@ -148,7 +148,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
         }
     });
 
-    server.on("/config/delete/bootstrap", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/delete/file/FNAME_BOOTSTRAP", HTTP_GET, [](AsyncWebServerRequest *request) {
         bool ok = deleteJsonFile(SPIFFS, FNAME_BOOTSTRAP);
         if (ok) {
             request->send(200, "text/plain",
@@ -158,7 +158,7 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
         }
     });
 
-    server.on("/config/delete/remote", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/delete/file/FNAME_CONFIGREMOTE", HTTP_GET, [](AsyncWebServerRequest *request) {
         bool ok = deleteJsonFile(SPIFFS, FNAME_CONFIGREMOTE);
         if (ok) {
             request->send(200, "text/plain",
