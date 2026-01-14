@@ -92,6 +92,17 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
         });
 
     // View the locally stored working config: /config.json
+    server.on("/config/show/FNAME_BOOTSTRAP", HTTP_GET, [](AsyncWebServerRequest *request) {
+        const char *path = FNAME_BOOTSTRAP;
+        if (!SPIFFS.exists(path)) {
+            request->send(404, "text/plain", "No /bootstrap.json stored");
+            return;
+        }
+        request->send(SPIFFS, path, "application/json");
+    });
+
+
+    // View the locally stored working config: /config.json
     server.on("/config/show/FNAME_CONFIG", HTTP_GET, [](AsyncWebServerRequest *request) {
         const char *path = FNAME_CONFIG;
         if (!SPIFFS.exists(path)) {

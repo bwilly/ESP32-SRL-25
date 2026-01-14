@@ -68,10 +68,11 @@ static bool applyConfigJsonDoc(JsonDocument &doc)
             continue;
         }
 
-        if (!doc.containsKey(key)) {
-            logger.log("ConfigLoad: string param '" + key + "' not present in JSON\n");
-            continue;
-        }
+        // todo: put me back in the logger Jan13'26 (removing due to noise while refactoring config load)
+        // if (!doc.containsKey(key)) {
+        //     logger.log("ConfigLoad: string param '" + key + "' not present in JSON\n");
+        //     continue;
+        // }
 
         // Accept JSON string, number, or bool and stringify it
         JsonVariant v = doc[key];
@@ -156,7 +157,8 @@ static bool applyConfigJsonDoc(JsonDocument &doc)
                 logger.log("ConfigLoad: W1 address key '" + hexKey + "' present but empty\n");
             }
         } else {
-            logger.log("ConfigLoad: W1 address key '" + hexKey + "' not present in JSON\n");
+            // todo: put me back in the logger Jan13'26 (removing due to noise while refactoring config load)
+            // logger.log("ConfigLoad: W1 address key '" + hexKey + "' not present in JSON\n");
         }
 
         // Name
@@ -169,7 +171,8 @@ static bool applyConfigJsonDoc(JsonDocument &doc)
                 logger.log("ConfigLoad: W1 name key '" + nameKey + "' present but null\n");
             }
         } else {
-            logger.log("ConfigLoad: W1 name key '" + nameKey + "' not present in JSON\n");
+            // todo: put me back in the logger Jan13'26 (removing due to noise while refactoring config load)
+            // logger.log("ConfigLoad: W1 name key '" + nameKey + "' not present in JSON\n");
         }
     }
 

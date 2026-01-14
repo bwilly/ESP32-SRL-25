@@ -273,19 +273,19 @@ void onOTAEnd(bool success)
   // Log when OTA has finished
   if (success)
   {
-    Serial.println("OTA update finished successfully! Restarting...");
+    Serial.println("s:OTA update finished successfully! Restarting...");
     ESP.restart();
   }
   else
   {
-    Serial.println("There was an error during OTA update!");
+    Serial.println("s:There was an error during OTA update!");
   }
   // <Add your own code here>
 }
 void onOTAStart()
 {
   // Log when OTA has started
-  Serial.println("OTA update started!");
+  Serial.println("s:OTA update started!");
 }
 
 /* Append a semi-unique id to the name template */
@@ -379,7 +379,7 @@ static bool writeStringToFile(const char *path, const String &data)
   File f = SPIFFS.open(path, FILE_WRITE); // truncates or creates
   if (!f)
   {
-    Serial.print(F("writeStringToFile: failed to open "));
+    Serial.print(F("s:writeStringToFile: failed to open "));
     Serial.print(path);
     Serial.println(F(" for writing"));
     return false;
@@ -390,7 +390,7 @@ static bool writeStringToFile(const char *path, const String &data)
 
   if (written != data.length())
   {
-    Serial.print(F("writeStringToFile: short write to "));
+    Serial.print(F("s:writeStringToFile: short write to "));
     Serial.print(path);
     Serial.print(F(" (expected "));
     Serial.print(data.length());
@@ -440,14 +440,18 @@ void tryFetchAndApplyRemoteConfig()
   // Load previous remote snapshot
   String previousRemoteJson;
   bool hasPreviousRemote = readFileToString(FNAME_CONFIGREMOTE, previousRemoteJson);
-  if (hasPreviousRemote)
-  {
-    logger.log("ConfigFetch: found previous remote snapshot /config-remote.json\n");
-  }
-  else
-  {
-    logger.log("ConfigFetch: no previous /config-remote.json (first run or missing)\n");
-  }
+  
+  char buf[128];
+
+  snprintf(
+    buf,
+    sizeof(buf),
+    "ConfigFetch: %s previous remote snapshot %s\n",
+    hasPreviousRemote ? "found" : "no",
+    FNAME_CONFIGREMOTE
+  );
+  logger.log(buf);
+
 
   // Clear and prepare merged remote doc
   g_remoteMergedDoc.clear();
@@ -614,9 +618,9 @@ void initSPIFFS()
 {
   if (!SPIFFS.begin(true))
   {
-    Serial.println("An error has occurred while mounting SPIFFS");
+    Serial.println("s:An error has occurred while mounting SPIFFS");
   }
-  Serial.println("SPIFFS mounted successfully");
+  Serial.println("s:SPIFFS mounted successfully");
 
   // loadLegacyPersistedValues();
 }
@@ -625,22 +629,22 @@ bool initWiFi()
 {
   if (ssid == "")
   {
-    Serial.println("Undefined SSID.");
+    Serial.println("s:Undefined SSID.");
     return false;
   }
 
-  Serial.println("Setting WiFi to WIFI_STA...");
+  Serial.println("s:Setting WiFi to WIFI_STA...");
 
   WiFi.disconnect(true);
   // delay(180);
   // Set custom hostname
   if (!WiFi.setHostname(gIdentity.name()))
   {
-    Serial.println("Error setting hostname");
+    Serial.println("s:Error setting hostname");
   }
   else
   {
-    Serial.print("Setting DNS hostname to: ");
+    Serial.print("s:Setting DNS hostname to: ");
     Serial.println(gIdentity.name());
   }
   WiFi.mode(WIFI_STA);
@@ -650,7 +654,7 @@ bool initWiFi()
   // WiFi.begin(ssid.c_str(), pass.c_str());
 
   int n = WiFi.scanNetworks();
-  Serial.println("Scan complete");
+  Serial.println("s:Scan complete");
   for (int i = 0; i < n; ++i)
   {
     Serial.print("SSID: ");
@@ -662,7 +666,7 @@ bool initWiFi()
   // Add Wi-Fi networks to WiFiMulti
   wifiMulti.addAP(ssid.c_str(), pass.c_str());
 
-  Serial.println("Connecting to Wi-Fi; looking for the strongest mesh node...");
+  Serial.println("s:Connecting to Wi-Fi; looking for the strongest mesh node...");
 
   // Start the connection attempt
   unsigned long startAttemptTime = millis();
@@ -681,7 +685,7 @@ bool initWiFi()
     unsigned long currentMillis = millis();
     if (currentMillis - startAttemptTime >= interval)
     {
-      Serial.println("Failed to connect after interval timeout.");
+      Serial.println("s:Failed to connect after interval timeout.");
 
       // Note: WiFi.reasonCode() can provide additional reason if available
       // if (WiFi.status() != WL_CONNECTED)
@@ -699,10 +703,10 @@ bool initWiFi()
   }
 
   // Successful connection
-  Serial.println("\nWiFi connected");
-  Serial.print("IP address: ");
+  Serial.println("\ns:WiFi connected");
+  Serial.print("s:IP address: ");
   Serial.println(WiFi.localIP());
-  Serial.print("Connected to BSSID: ");
+  Serial.print("s:Connected to BSSID: ");
   Serial.println(WiFi.BSSIDstr());
 
   return true;
@@ -710,13 +714,13 @@ bool initWiFi()
 
 void AdvertiseServices()
 {
-  Serial.println("AdvertiseServices on mDNS...");
+  Serial.println("s:AdvertiseServices on mDNS...");
   const char *myName = gIdentity.name();
 
   if (MDNS.begin(myName))
   {
-    Serial.println(F("mDNS responder started"));
-    Serial.print(F("I am: "));
+    Serial.println(F("s:mDNS responder started"));
+    Serial.print(F("s:I am: "));
     Serial.println(myName);
 
     MDNS.addService(SERVICE_NAME, SERVICE_PROTOCOL, SERVICE_PORT);
@@ -725,7 +729,7 @@ void AdvertiseServices()
   {
     while (1)
     {
-      Serial.println(F("Error setting up MDNS responder"));
+      Serial.println(F("s:Error setting up MDNS responder"));
       delay(1000);
     }
   }
@@ -811,14 +815,14 @@ void setupDS18b20(void)
   temptSensor.sensors.begin();
 
   // locate devices on the bus
-  Serial.println("Locating devices...");
+  Serial.println("s:Locating devices...");
   Serial.print("Found ");
   deviceCount = temptSensor.sensors.getDeviceCount();
   Serial.print(deviceCount, DEC);
   Serial.println(" devices.");
   Serial.println("");
 
-  Serial.println("Printing addresses...");
+  Serial.println("s:Printing addresses...");
   for (int i = 0; i < deviceCount; i++)
   {
     Serial.print("Sensor ");
@@ -874,26 +878,26 @@ static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut)
 
   // 3) Minimal bootstrap validation (tweak rules as you like)
   //    If you want AP bootstrap to ONLY set wifi + identity, keep it strict here.
-  if (tmp.wifi.ssid.empty())
+  if (tmp.boot.wifi.ssid.empty())
   {
     errOut = "Missing required field: wifi.ssid";
     return false;
   }
-  if (tmp.wifi.pass.empty())
+  if (tmp.boot.wifi.pass.empty())
   {
     errOut = "Missing required field: wifi.pass";
     return false;
   }
-  if (tmp.identity.locationName.empty())
+  if (tmp.boot.identity.locationName.empty())
   {
     errOut = "Missing required field: identity.locationName";
     return false;
   }
 
   // Default instance to locationName if omitted
-  if (tmp.identity.instance.empty())
+  if (tmp.boot.identity.instance.empty())
   {
-    tmp.identity.instance = tmp.identity.locationName;
+    tmp.boot.identity.instance = tmp.boot.identity.locationName;
   }
 
   // 4) Persist to /bootstrap.json in modular format
@@ -949,19 +953,19 @@ void setup()
 
 void setupSpiffsAndConfig()
 {
-  Serial.println("initSpiffs...");
+  Serial.println("s:initSpiffs...");
   initSPIFFS();
 
   // 1) Load BOOTSTRAP config first (new source of truth for wifi + identity + base URLs)
   if (ConfigStorage::loadAppConfigFromFile(FNAME_BOOTSTRAP, gConfig))
   {
     // no logger during bootstrap 
-    Serial.println("AppConfig: loaded BOOTSTRAP from /bootstrap.json into gConfig. Since this succeeded, shoudl skip legacy indie spiff files.\n");
+    Serial.println("s:AppConfig: loaded BOOTSTRAP from /bootstrap.json into gConfig. Since this succeeded, shoudl skip legacy indie spiff files.\n");
   }
   else
   {
     // no logger during bootstrap
-    Serial.println("AppConfig: no /bootstrap.json (or parse error). Will try legacy bootstrap migration next.\n");
+    Serial.println("s:AppConfig: no /bootstrap.json (or parse error). Will try legacy bootstrap migration next.\n");
 
     // 1a) Legacy bootstrap migration path (one-time):
     // loadPersistedValues() reads /ssid.txt /pass.txt /location.txt /config-url.txt /ota-url.txt
@@ -973,15 +977,15 @@ void setupSpiffsAndConfig()
     if (ssid.length() > 0 && pass.length() > 0 && locationName.length() > 0)
     {
       AppConfig tmp = gConfig; // keep defaults
-      tmp.wifi.ssid = std::string(ssid.c_str());
-      tmp.wifi.pass = std::string(pass.c_str());
+      tmp.boot.wifi.ssid = std::string(ssid.c_str());
+      tmp.boot.wifi.pass = std::string(pass.c_str());
 
-      tmp.identity.locationName = std::string(locationName.c_str());
+      tmp.boot.identity.locationName = std::string(locationName.c_str());
 
       // Default instance to locationName (your rule)
-      if (tmp.identity.instance.empty())
+      if (tmp.boot.identity.instance.empty())
       {
-        tmp.identity.instance = tmp.identity.locationName;
+        tmp.boot.identity.instance = tmp.boot.identity.locationName;
       }
 
       // If you have these in legacy:
@@ -989,42 +993,42 @@ void setupSpiffsAndConfig()
       // otaUrl    = "http://.../firmware.bin"
       if (configUrl.length() > 0)
       {
-        tmp.remote.configBaseUrl = std::string(configUrl.c_str());
+        tmp.boot.remote.configBaseUrl = std::string(configUrl.c_str());
       }
       if (otaUrl.length() > 0)
       {
-        tmp.remote.otaUrl = std::string(otaUrl.c_str());
+        tmp.boot.remote.otaUrl = std::string(otaUrl.c_str());
       }
 
       if (ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp, g_configSaveDoc))
       {
-        Serial.println("AppConfig: migrated legacy bootstrap params -> /bootstrap.json\n");
+        Serial.println("s:AppConfig: migrated legacy bootstrap params -> /bootstrap.json\n");
         gConfig = tmp;
       }
       else
       {
-        Serial.println("AppConfig: FAILED to write /bootstrap.json during legacy migration\n");
+        Serial.println("s:AppConfig: FAILED to write /bootstrap.json during legacy migration\n");
       }
     }
     else
     {
-      Serial.println("AppConfig: legacy bootstrap values incomplete; staying unconfigured (AP mode expected)\n");
+      Serial.println("s:AppConfig: legacy bootstrap values incomplete; staying unconfigured (AP mode expected)\n");
     }
   }
 
   // 2) Apply bootstrap values into your legacy globals that initWiFi() expects
   // (You can delete these legacy globals later, but for now keep it explicit)
-  ssid = String(gConfig.wifi.ssid.c_str());
-  pass = String(gConfig.wifi.pass.c_str());
-  locationName = String(gConfig.identity.locationName.c_str());
+  ssid = String(gConfig.boot.wifi.ssid.c_str());
+  pass = String(gConfig.boot.wifi.pass.c_str());
+  locationName = String(gConfig.boot.identity.locationName.c_str());
 
-  gIdentity.init(MDNS_DEVICE_NAME, gConfig.identity.locationName.c_str());
+  gIdentity.init(MDNS_DEVICE_NAME, gConfig.boot.identity.locationName.c_str());
 
   // configUrl in your code is now baseUrl like http://salt-r420:9080/esp-config/salt
-  configUrl = String(gConfig.remote.configBaseUrl.c_str());
+  configUrl = String(gConfig.boot.remote.configBaseUrl.c_str());
 
   // otaUrl legacy string (if still used anywhere)
-  otaUrl = String(gConfig.remote.otaUrl.c_str());
+  otaUrl = String(gConfig.boot.remote.otaUrl.c_str());
   mainDelay = gConfig.timing.mainDelayMs;
 
   // 3) Now load the effective runtime cache (mqtt/sensors/pins/etc)
@@ -1036,7 +1040,7 @@ void setupSpiffsAndConfig()
   // {
   //   Serial.println("ConfigLoad: no EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' (or parse error); continuing with bootstrap-only config.");
   // }
-
+  Serial.println("s:serial output. assuming logger not yet started.");
   Serial.println(ssid);
   Serial.println(pass);
   Serial.println(locationName);
@@ -1124,7 +1128,7 @@ void setupAccessPointMode()
 
   apStartTime = millis(); // Record the start time in AP mode
 
-  Serial.println("Setting AP (Access Point)");
+  Serial.println("s:Setting AP (Access Point)");
 
   // Build base SSID (without prefix)
   String base;
@@ -1152,11 +1156,11 @@ void setupAccessPointMode()
 
   WiFi.softAP(apSsid, AP_PASSWORD);
 
-  Serial.print("AP SSID: ");
+  Serial.print("s:AP SSID: ");
   Serial.println(apSsid);
 
   IPAddress IP = WiFi.softAPIP();
-  Serial.print("AP IP address: ");
+  Serial.print("s:AP IP address: ");
   Serial.println(IP);
 
   logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
@@ -1164,7 +1168,7 @@ void setupAccessPointMode()
 
   if (!SPIFFS.begin(true))
   {
-    Serial.println("SPIFFS is out of scope per bwilly!");
+    Serial.println("s:SPIFFS is out of scope per bwilly!");
   }
   // Web Server Root URL
   registerWebRoutesAp(server);
@@ -1205,17 +1209,17 @@ void publishSimpleMessage()
   {
     if (mqClient.publish(topic, message))
     {
-      Serial.print("Message published successfully: ");
+      Serial.print("s:Message published successfully: ");
       Serial.println(message);
     }
     else
     {
-      Serial.println("Message publishing failed.");
+      Serial.println("s:Message publishing failed.");
     }
   }
   else
   {
-    Serial.println("Not connected to MQTT broker.");
+    Serial.println("s:Not connected to MQTT broker.");
     Serial.println(mqClient.state());
 
     reconnectMQ();
@@ -1388,7 +1392,10 @@ void loop()
   {
     if (currentMillis - apStartTime >= AP_REBOOT_TIMEOUT)
     {
-      Serial.println("Rebooting due to extended time in AP mode...");
+      logger.log("Rebooting due to extended time in AP mode...");
+      Serial.println("s:Rebooting due to extended time in AP mode...");
+      delay(1000);
+      yield();
       ESP.restart();
     }
   }
@@ -1401,15 +1408,15 @@ void loop()
   // checking for WIFI connection
   if ((WiFi.status() != WL_CONNECTED) && (current_time - previous_time >= reconnect_delay))
   {
-    Serial.print("millis: ");
+    Serial.print("s:millis: ");
     Serial.println(millis());
-    Serial.print("previous_time: ");
+    Serial.print("s:previous_time: ");
     Serial.println(previous_time);
-    Serial.print("current_time: ");
+    Serial.print("s:current_time: ");
     Serial.println(current_time);
-    Serial.print("reconnect_delay: ");
+    Serial.print("s:reconnect_delay: ");
     Serial.println(reconnect_delay);
-    Serial.println("Reconnecting to WIFI network by restarting to leverage best AP algorithm");
+    Serial.println("s:Reconnecting to WIFI network by restarting to leverage best AP algorithm");
     // WiFi.disconnect();
     // WiFi.reconnect();
     ESP.restart();

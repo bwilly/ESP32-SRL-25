@@ -36,3 +36,9 @@ Minimal diff
 
 
 Then rebuild.
+
+
+Git submodule update [Jan13'26]: todo: switch to SSH per ChatGPT
+git -c protocol.file.allow=always submodule update --remote --merge
+
+
