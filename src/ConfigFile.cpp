@@ -11,7 +11,7 @@
 
 bool saveConfigJson(const String &jsonBody, String &errOut)
 {
-    Serial.println(F("saveConfigJson: saving config.json... "));
+    Serial.println(F("s:saveConfigJson: saving config.json... "));
 
 
     // 1) Parse JSON (sanity check) - use global reusable buffer
@@ -22,7 +22,7 @@ bool saveConfigJson(const String &jsonBody, String &errOut)
         return false;
     }
 
-    Serial.println(F("saveConfigJson: deserialized... "));
+    Serial.println(F("s:saveConfigJson: deserialized... "));
 
     // 2) Apply into a temp AppConfig so we can validate without clobbering gConfig
     AppConfig tmp = gConfig; // start from current defaults
@@ -32,7 +32,7 @@ bool saveConfigJson(const String &jsonBody, String &errOut)
         return false;
     }
 
-    Serial.println(F("saveConfigJson: about to persist... "));
+    Serial.println(F("s:saveConfigJson: about to persist... "));
 
     // 4) Persist to /config.json in modular format
     if (!ConfigStorage::saveAppConfigToFile(FNAME_CONFIG, tmp)) {
