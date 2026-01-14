@@ -10,12 +10,12 @@ bool downloadConfigJson(const String &url, String &outJson)
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println(F("downloadConfigJson: WiFi not connected"));
+        Serial.println(F("s:downloadConfigJson: WiFi not connected"));
         return false;
     }
 
     HTTPClient http;
-    Serial.print(F("downloadConfigJson: GET "));
+    Serial.print(F("s:downloadConfigJson: GET "));
     Serial.println(url);
 
     if (!http.begin(url))
@@ -28,7 +28,7 @@ bool downloadConfigJson(const String &url, String &outJson)
 
     if (httpCode != HTTP_CODE_OK)
     {
-        Serial.print(F("downloadConfigJson: HTTP code "));
+        Serial.print(F("s:downloadConfigJson: HTTP code "));
         Serial.println(httpCode);
         http.end();
         return false;
@@ -39,12 +39,12 @@ bool downloadConfigJson(const String &url, String &outJson)
 
     if (payload.length() == 0)
     {
-        Serial.println(F("downloadConfigJson: empty response body"));
+        Serial.println(F("s:downloadConfigJson: empty response body"));
         return false;
     }
 
     outJson = payload;
-    Serial.print(F("downloadConfigJson: received "));
+    Serial.print(F("s:downloadConfigJson: received "));
     Serial.print(outJson.length());
     Serial.println(F(" bytes"));
 
