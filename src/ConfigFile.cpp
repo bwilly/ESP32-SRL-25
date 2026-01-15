@@ -41,7 +41,7 @@ bool saveConfigJson(const String &jsonBody, String &errOut)
     }
 
     // 5) Also update live gConfig
-    gConfig = tmp;
+    // gConfig = tmp;
 
     return true;
 }
