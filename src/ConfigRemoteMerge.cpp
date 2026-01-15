@@ -11,6 +11,8 @@
 static const size_t REMOTE_JSON_CAPACITY = 4096;
 static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteMergedDoc;
 static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteTmpDoc;
+static Logger* logger = nullptr;
+
 
 static bool writeStringToFile(const char *path, const String &data)
 {
@@ -53,7 +55,63 @@ static bool readFileToString(const char *path, String &out)
   return true;
 }
 
-// void tryFetchAndApplyRemoteConfig()
+static void fetchApplyAndMergeRemoteConfig(
+    Logger&       inLogger,
+    const String& url,
+    const char*   label,
+    String&       json,             // reused buffer to avoid extra allocs
+    JsonObject    mergedRoot,
+    bool&         anyRemoteApplied  // out flag
+)
+{
+  logger = &inLogger;
+
+  if (url.length() == 0)
+  {
+    return;
+  }
+
+  if (!downloadConfigJson(url, json))
+  {
+    logger->log(String("ConfigFetch: ") + label +
+               " config fetch FAILED or not found at " + url + "\n");
+    return;
+  }
+
+  logger->log(String("ConfigFetch: downloaded ") + label + " config from " + url +
+             " (" + String(json.length()) + " bytes)\n");
+
+  // Apply to in-memory params
+  if (!legacyLoadConfigFromJsonString(json))
+  {
+    logger->log(String("ConfigFetch: ") + label + " JSON parse/apply FAILED\n");
+    return;
+  }
+
+  logger->log(String("ConfigFetch: ") + label + " JSON applied OK\n");
+
+  // Merge into remote snapshot doc
+  g_remoteTmpDoc.clear();
+  DeserializationError err = deserializeJson(g_remoteTmpDoc, json);
+  if (err)
+  {
+    logger->log(String("ConfigFetch: ") + label +
+               " JSON re-parse FAILED for snapshot merge\n");
+    return;
+  }
+
+  JsonObject src = g_remoteTmpDoc.as<JsonObject>();
+  for (JsonPair kv : src)
+  {
+    mergedRoot[kv.key()] = kv.value(); // instance overrides global on same key
+  }
+
+  anyRemoteApplied = true;
+}
+
+
+// todo:workingHere: refactor this to use ConfigCodec 
+// also, moved globals in here g_remoteMergedDoc, g_remoteTmpDoc
 void tryFetchAndApplyRemoteConfig(
     Logger&        logger,
     const String&  configUrl,
@@ -116,57 +174,13 @@ void tryFetchAndApplyRemoteConfig(
   bool anyRemoteApplied = false;
   String json;
 
-  auto fetchApplyAndMerge = [&](const String &url, const char *label)
-  {
-    if (url.length() == 0)
-    {
-      return;
-    }
-
-    if (!downloadConfigJson(url, json))
-    {
-      logger.log(String("ConfigFetch: ") + label +
-                 " config fetch FAILED or not found at " + url + "\n");
-      return;
-    }
-
-    logger.log(String("ConfigFetch: downloaded ") + label + " config from " + url +
-               " (" + String(json.length()) + " bytes)\n");
-
-    // Apply to in-memory params
-    if (!legacyLoadConfigFromJsonString(json))
-    {
-      logger.log(String("ConfigFetch: ") + label + " JSON parse/apply FAILED\n");
-      return;
-    }
-
-    logger.log(String("ConfigFetch: ") + label + " JSON applied OK\n");
-
-    // Merge into remote snapshot doc
-    g_remoteTmpDoc.clear();
-    DeserializationError err = deserializeJson(g_remoteTmpDoc, json);
-    if (err)
-    {
-      logger.log(String("ConfigFetch: ") + label +
-                 " JSON re-parse FAILED for snapshot merge\n");
-      return;
-    }
-
-    JsonObject src = g_remoteTmpDoc.as<JsonObject>();
-    for (JsonPair kv : src)
-    {
-      mergedRoot[kv.key()] = kv.value(); // instance overrides global on same key
-    }
-
-    anyRemoteApplied = true;
-  };
-
   // GLOBAL then INSTANCE
-  fetchApplyAndMerge(globalUrl, "GLOBAL");
+  fetchApplyAndMergeRemoteConfig(logger, globalUrl, "GLOBAL", json, mergedRoot, anyRemoteApplied);
   if (instanceUrl.length() > 0)
   {
-    fetchApplyAndMerge(instanceUrl, "INSTANCE");
+    fetchApplyAndMergeRemoteConfig(logger, instanceUrl, "INSTANCE", json, mergedRoot, anyRemoteApplied);
   }
+
 
   if (!anyRemoteApplied)
   {
