@@ -51,7 +51,7 @@ const int W1_NUM_BYTES = 8; // The expected number of bytes
 // Variables to save values from HTML form
 String ssid;
 String pass;
-String locationName; // used during regular operation, not only setup
+String locationName; // used during regular operation, not only setup (todo: need to switch to gConifg Jan14'26)
 String configUrl;
 String otaUrl;
 // String pinDht;

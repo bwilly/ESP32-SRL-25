@@ -56,7 +56,9 @@ static bool hexStringToBytes(const String &hex, uint8_t *out, size_t outLen)
 }
 
 // Internal: apply a parsed JsonDocument to the current in-memory config
-static bool applyConfigJsonDoc(JsonDocument &doc)
+// deprecated: instead use ConfigCodec::configFromJson()
+// this is legacy
+static bool legacyApplyConfigJsonDoc(JsonDocument &doc)
 {
     // 1) String params (ssid, pass, location, pins, mqtt-server, etc.)
     for (auto &entry : paramToVariableMap) {
@@ -179,7 +181,7 @@ static bool applyConfigJsonDoc(JsonDocument &doc)
     return true;
 }
 
-bool loadConfigFromJsonString(const String &json)
+bool legacyLoadConfigFromJsonString(const String &json)
 {
     StaticJsonDocument<CONFIG_JSON_CAPACITY> doc;
 
@@ -190,7 +192,7 @@ bool loadConfigFromJsonString(const String &json)
         return false;
     }
 
-    return applyConfigJsonDoc(doc);
+    return legacyApplyConfigJsonDoc(doc);
 }
 
 // bool loadConfigFromJsonFile(const char *path)
@@ -218,7 +220,7 @@ bool loadEffectiveCacheFromFile(const char* path)
         return false;
     }
 
-    return applyConfigJsonDoc(doc);
+    return legacyApplyConfigJsonDoc(doc);
 }
 
 bool deleteJsonFile(fs::FS &fs, const char* filePath)
