@@ -54,6 +54,113 @@ extern volatile bool g_bootstrapPending;
 extern String g_bootstrapBody;
 extern String g_bootstrapErr;
 
+static void registerRoutesIndex(AsyncWebServer &server)
+{
+    server.on("/routes", HTTP_GET, [](AsyncWebServerRequest *request) {
+
+        struct LinkRow {
+            const char *name;
+            const char *path;
+            const char *method;   // "GET" or "POST"
+            const char *notes;    // optional
+        };
+
+        static const LinkRow rows[] = {
+            // ---- Config/common ----
+            {"POST bootstrap JSON",                  "/config/post/bootstrap",                  "POST", "raw JSON (curl/Postman)"},
+            {"Show FNAME_BOOTSTRAP",                 "/config/show/FNAME_BOOTSTRAP",            "GET",  ""},
+            {"Show FNAME_CONFIG",                    "/config/show/FNAME_CONFIG",               "GET",  ""},
+            {"Show EFFECTIVE_CACHE_PATH (legacy)",   "/config/show/EFFECTIVE_CACHE_PATH",       "GET",  ""},
+            {"Show FNAME_CONFIGREMOTE",              "/config/show/FNAME_CONFIGREMOTE",         "GET",  ""},
+
+            {"Delete EFFECTIVE_CACHE_PATH (legacy)", "/config/delete/file/EFFECTIVE_CACHE_PATH","GET",  ""},
+            {"Delete FNAME_CONFIG",                  "/config/delete/file/FNAME_CONFIG",        "GET",  ""},
+            {"Delete FNAME_BOOTSTRAP",               "/config/delete/file/FNAME_BOOTSTRAP",     "GET",  ""},
+            {"Delete FNAME_CONFIGREMOTE",            "/config/delete/file/FNAME_CONFIGREMOTE",  "GET",  ""},
+
+            // ---- Device ----
+            {"Device restart",                       "/device/restart",                         "GET",  ""},
+
+            // ---- OTA ----
+            {"Run OTA",                              "/ota/run",                                "GET",  ""},
+
+            // ---- Station UI ----
+            {"Root page (index)",                    "/",                                       "GET",  "SPIFFS /index.html"},
+            {"Root POST (legacy form submit)",       "/",                                       "POST", "calls handlePostParameters + restart"},
+            {"Prometheus metrics",                   "/metrics",                                "GET",  ""},
+            {"Device name",                          "/devicename",                             "GET",  ""},
+            {"BSSID",                                "/bssid",                                  "GET",  ""},
+            {"DHT temperature",                      "/temperature",                            "GET",  ""},
+            {"CHT temperature",                      "/cht/temperature",                        "GET",  ""},
+            {"CHT humidity",                         "/cht/humidity",                           "GET",  ""},
+            {"Manage (WiFi manager page)",           "/manage",                                 "GET",  "SPIFFS /wifimanager.html"},
+            {"Version",                              "/version",                                "GET",  ""},
+            {"OneWire (raw)",                        "/onewire",                                "GET",  ""},
+            {"OneWire HTML",                         "/onewiretempt",                           "GET",  ""},
+            {"OneWire metrics",                      "/onewiremetrics",                         "GET",  ""},
+        };
+
+        String html;
+        html.reserve(8192);
+
+        html += "<!doctype html><html><head>"
+                "<meta charset='utf-8'/>"
+                "<meta name='viewport' content='width=device-width, initial-scale=1'/>"
+                "<title>Endpoints</title>"
+                "<style>"
+                "body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:16px;}"
+                "table{border-collapse:collapse;width:100%;}"
+                "th,td{border:1px solid #ddd;padding:10px;vertical-align:top;}"
+                "th{background:#f5f5f5;text-align:left;}"
+                "a{word-break:break-all;}"
+                ".method{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:nowrap;}"
+                ".notes{color:#666;font-size:0.9em;}"
+                "textarea{width:100%;min-height:120px;}"
+                "button{padding:8px 12px;}"
+                "</style>"
+                "</head><body>"
+                "<h2>Device Endpoints</h2>"
+                "<table>"
+                "<tr><th>Name</th><th>Method</th><th>Action</th><th>Notes</th></tr>";
+
+        for (auto &r : rows) {
+            html += "<tr>";
+            html += "<td>"; html += r.name; html += "</td>";
+            html += "<td class='method'>"; html += r.method; html += "</td>";
+
+            html += "<td>";
+            if (strcmp(r.method, "GET") == 0) {
+                html += "<a href='";
+                html += r.path;
+                html += "'>";
+                html += r.path;
+                html += "</a>";
+            } else {
+                // Render a mini form for POST endpoints.
+                // NOTE: this posts form-encoded. For raw JSON endpoints, keep using curl/Postman.
+                html += "<form method='POST' action='";
+                html += r.path;
+                html += "'>";
+                html += "<textarea name='body' placeholder='Paste JSON or form content here'></textarea><br/>";
+                html += "<button type='submit'>POST</button>";
+                html += "</form>";
+            }
+            html += "</td>";
+
+            html += "<td class='notes'>";
+            html += (r.notes ? r.notes : "");
+            html += "</td>";
+
+            html += "</tr>";
+        }
+
+        html += "</table></body></html>";
+
+        request->send(200, "text/html", html);
+    });
+}
+
+
 // -------------------------
 // /config/* endpoints
 // -------------------------
@@ -234,6 +341,8 @@ static void registerOtaRoutes(AsyncWebServer &server)
 static void registerStationUiRoutes(AsyncWebServer &server)
 {
     logger.log("set web root /index.html...\n");
+
+    registerRoutesIndex(server);
 
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
