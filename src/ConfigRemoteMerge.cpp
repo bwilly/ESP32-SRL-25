@@ -266,6 +266,10 @@ void tryFetchAndApplyRemoteConfig(
   logger.log("applyRemoteConfig: remote config saved successfully as general config\n");
 
 
+  logger.handle();
+  logger.flush(16);
+
+
   // Allow logger + UART/WiFi buffers to flush
   delay(500);
 
