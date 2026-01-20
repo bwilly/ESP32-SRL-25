@@ -10,5 +10,5 @@ void tryFetchAndApplyRemoteConfig(
     Logger&        inLogger,
     const std::string&  configUrl,
     const std::string&  locationName,
-    const char*    FNAME_CONFIGREMOTE
+    const char*    mergedRemoteLocalFilename
 );

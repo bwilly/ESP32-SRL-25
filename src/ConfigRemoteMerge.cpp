@@ -1,5 +1,5 @@
 // ConfigRemoteMerge.cpp
-#include <Arduino.h>
+// #include <Arduino.h>
 #include "SPIFFS.h"
 #include "ConfigFile.h"
 #include "ConfigFetch.h"
@@ -16,7 +16,7 @@ static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteTmpDoc;
 static Logger* logger = nullptr;
 
 
-static bool writeStringToFile(const char *path, const String &data)
+static bool writeStringToFile(const char *path, const std::string &data)
 {
   File f = SPIFFS.open(path, FILE_WRITE); // truncates or creates
   if (!f)
@@ -27,7 +27,7 @@ static bool writeStringToFile(const char *path, const String &data)
     return false;
   }
 
-  size_t written = f.print(data);
+  size_t written = f.print(data.c_str());
   f.close();
 
   if (written != data.length())
@@ -45,14 +45,22 @@ static bool writeStringToFile(const char *path, const String &data)
   return true;
 }
 
-static bool readFileToString(const char *path, String &out)
+static bool readFileToString(const char *path, std::string &out)
 {
   File f = SPIFFS.open(path, FILE_READ);
   if (!f)
   {
     return false;
   }
-  out = f.readString();
+  
+  size_t size = f.size();
+  out.resize(size);
+  
+  if (size > 0)
+  {
+    f.readBytes(&out[0], size);
+  }
+  
   f.close();
   return true;
 }
@@ -131,7 +139,7 @@ void tryFetchAndApplyRemoteConfig(
     Logger&        logger,
     const std::string&  configUrl,
     const std::string&  locationName,
-    const char*    FNAME_CONFIGREMOTE
+    const char*    mergedRemoteLocalFilename
 )
 {
   const std::string baseUrl = configUrl;
@@ -167,8 +175,8 @@ void tryFetchAndApplyRemoteConfig(
   }
 
   // Load previous remote snapshot
-  String previousRemoteJson;
-  bool hasPreviousRemote = readFileToString(FNAME_CONFIGREMOTE, previousRemoteJson);
+  std::string previousRemoteJson;
+  bool hasPreviousRemote = readFileToString(mergedRemoteLocalFilename, previousRemoteJson);
   
   char buf[128];
 
@@ -177,7 +185,7 @@ void tryFetchAndApplyRemoteConfig(
     sizeof(buf),
     "ConfigFetch: %s previous remote snapshot %s\n",
     hasPreviousRemote ? "found" : "no",
-    FNAME_CONFIGREMOTE
+    mergedRemoteLocalFilename
   );
   logger.log(buf);
 
@@ -204,7 +212,7 @@ void tryFetchAndApplyRemoteConfig(
   }
 
   // Serialize new remote snapshot
-  String newRemoteJson;
+  std::string newRemoteJson;
   serializeJson(g_remoteMergedDoc, newRemoteJson);
 
   // Compare snapshots *only on remote config*
@@ -217,7 +225,7 @@ void tryFetchAndApplyRemoteConfig(
   logger.log("ConfigFetch: remote config changed; persisting and rebooting\n");
 
   // Persist remote snapshot
-  if (writeStringToFile(FNAME_CONFIGREMOTE, newRemoteJson))
+  if (writeStringToFile(mergedRemoteLocalFilename, newRemoteJson))
   {
     logger.log("ConfigFetch: wrote new remote snapshot to /config-remote.json\n");
   }
@@ -239,7 +247,7 @@ void tryFetchAndApplyRemoteConfig(
 
   String err;
 
-  if (!saveConfigJson(newRemoteJson, err))
+  if (!saveConfigJson(String(newRemoteJson.c_str()), err))
   {
     logger.log("applyRemoteConfig: failed to save remote config to general json config\n");
 
