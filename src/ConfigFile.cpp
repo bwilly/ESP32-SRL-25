@@ -9,16 +9,16 @@
 #include "shared_vars.h"   
 
 
-bool saveConfigJson(const String &jsonBody, String &errOut)
+bool saveConfigJson(const std::string &jsonBody, std::string &errOut)
 {
     Serial.println(F("s:saveConfigJson: saving config.json... "));
 
 
     // 1) Parse JSON (sanity check) - use global reusable buffer
     g_configSaveDoc.clear();
-    DeserializationError err = deserializeJson(g_configSaveDoc, jsonBody);
+    DeserializationError err = deserializeJson(g_configSaveDoc, String(jsonBody.c_str()));
     if (err) {
-        errOut = String("JSON parse error: ") + err.c_str();
+        errOut = std::string("JSON parse error: ") + err.c_str();
         return false;
     }
 

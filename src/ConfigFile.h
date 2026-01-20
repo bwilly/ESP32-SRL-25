@@ -1,5 +1,4 @@
 #pragma once
-#include <Arduino.h>
 #include <ArduinoJson.h>
 #include "ConfigCodec.h"  // For APP_CONFIG_JSON_CAPACITY
 
@@ -8,4 +7,4 @@ extern StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 
 // Saves validated bootstrap config JSON into /config.json (modular)
 // errOut is set on failure.
-bool saveConfigJson(const String &jsonBody, String &errOut);
+bool saveConfigJson(const std::string &jsonBody, std::string &errOut);

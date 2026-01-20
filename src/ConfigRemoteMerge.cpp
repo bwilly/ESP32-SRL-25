@@ -245,15 +245,15 @@ void tryFetchAndApplyRemoteConfig(
   // }
 
 
-  String err;
+  std::string err;
 
-  if (!saveConfigJson(String(newRemoteJson.c_str()), err))
+  if (!saveConfigJson(newRemoteJson, err))
   {
     logger.log("applyRemoteConfig: failed to save remote config to general json config\n");
 
     if (err.length()) {
         logger.log("applyRemoteConfig: error=");
-        logger.log(err);
+        logger.log(err.c_str());
         logger.log("\n");
     }
     else {
