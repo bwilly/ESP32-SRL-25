@@ -49,11 +49,11 @@ const int W1_NUM_BYTES = 8; // The expected number of bytes
 // const char *PARAM_ENABLE_MQTT = "enableMQTT";
 
 // Variables to save values from HTML form
-String ssid;
-String pass;
-String locationName; // used during regular operation, not only setup (todo: need to switch to gConifg Jan14'26)
-String configUrl;
-String otaUrl;
+std::string ssid;
+std::string pass;
+std::string locationName; // used during regular operation, not only setup (todo: need to switch to gConifg Jan14'26)
+std::string configUrl;
+std::string otaUrl;
 // String pinDht;
 // String pinAcs;
 // String mqttServer;
@@ -75,21 +75,32 @@ String w1Name[6];        // todo:remove this and above after refactor Nov8'24
 
 CHT832xSensor envSensor(0x44); // default address; todo: externalize Dec3'25
 
+
+std::map<std::string, std::string*> paramToVariableMap;
+
+// void initParamMap() {
+//     paramToVariableMap["ssid"] = &ssid;
+//     paramToVariableMap["pass"] = &pass;
+//     paramToVariableMap["config-url"] = &configUrl;
+//     paramToVariableMap["ota-url"] = &otaUrl;
+//     paramToVariableMap["main-delay"] = &mainDelay;
+// }
+
 // always must update me when adding new config params
-std::map<String, String *> paramToVariableMap = {
-    {"ssid", &ssid},
-    {"pass", &pass},
-    {"location", &locationName},
-    {"config-url", &configUrl},
-    {"ota-url", &otaUrl},
+// std::map<std::string, std::string *> paramToVariableMap = {
+    // {"ssid", &ssid},
+    // {"pass", &pass},
+    // {"location", &locationName},
+    // {"config-url", &configUrl},
+    // {"ota-url", &otaUrl},
     // {"pinDht", &pinDht},
     // {"pinAcs", &pinAcs},
     // {"mqtt-server", &mqttServer},
     // {"mqtt-port", &mqttPort},
-    {"main-delay", &mainDelay}
+    // {"main-delay", &mainDelay}
     // Note: For Boolean and other non-String types, you might need a different approach
 
-};
+// };
 
 // std::map<String, bool *> paramToBoolMap = {
 //     {"enableW1", &w1Enabled},

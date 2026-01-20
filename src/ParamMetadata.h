@@ -1,5 +1,5 @@
 #pragma once
-#include <Arduino.h>
+// #include <Arduino.h>
 
 // // Declaration for paramList
 // extern std::vector<ParamMetadata> paramList;
@@ -7,8 +7,8 @@
 // In ParamMetadata.h
 struct ParamMetadata
 {
-    String name;
-    String spiffsPath;
+    std::string name;
+    std::string spiffsPath;
     enum Type
     {
         STRING,

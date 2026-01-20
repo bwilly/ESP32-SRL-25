@@ -79,7 +79,7 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 #include "TemperatureSensor.h"
 #include "Config.h"
 #include "MessagePublisher.h"
-#include "ConfigDump.h"
+// #include "ConfigDump.h"
 #include "OtaUpdate.h"
 #include "CHT832xSensor.h"
 #include "SCT_SRL.h"
@@ -798,17 +798,17 @@ void setupSpiffsAndConfig()
 
   // 2) Apply bootstrap values into your legacy globals that initWiFi() expects
   // (You can delete these legacy globals later, but for now keep it explicit)
-  ssid = String(gConfig.boot.wifi.ssid.c_str());
-  pass = String(gConfig.boot.wifi.pass.c_str());
-  locationName = String(gConfig.boot.identity.locationName.c_str());
+  ssid = gConfig.boot.wifi.ssid;
+  pass = gConfig.boot.wifi.pass;
+  locationName = gConfig.boot.identity.locationName.c_str();
 
   gIdentity.init(MDNS_DEVICE_NAME, gConfig.boot.identity.locationName.c_str());
 
   // configUrl in your code is now baseUrl like http://salt-r420:9080/esp-config/salt
-  configUrl = String(gConfig.boot.remote.configBaseUrl.c_str());
+  configUrl = gConfig.boot.remote.configBaseUrl;
 
   // otaUrl legacy string (if still used anywhere)
-  otaUrl = String(gConfig.boot.remote.otaUrl.c_str());
+  otaUrl = gConfig.boot.remote.otaUrl.c_str();
   mainDelay = gConfig.timing.mainDelayMs;
 
   // 3) Now load the effective runtime cache (mqtt/sensors/pins/etc)
@@ -821,9 +821,9 @@ void setupSpiffsAndConfig()
   //   Serial.println("ConfigLoad: no EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' (or parse error); continuing with bootstrap-only config.");
   // }
   Serial.println("s:serial output. assuming logger not yet started.");
-  Serial.println(ssid);
-  Serial.println(pass);
-  Serial.println(locationName);
+  Serial.println(ssid.c_str());
+  Serial.println(pass.c_str());
+  Serial.println(String(locationName.c_str()));
   Serial.println(mainDelay);
 }
 
@@ -911,7 +911,7 @@ void setupAccessPointMode()
   Serial.println("s:Setting AP (Access Point)");
 
   // Build base SSID (without prefix)
-  String base;
+  std::string base;
 
   if (locationName.length() > 0)
   {
@@ -1095,7 +1095,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishTemperature...\n");
-    MessagePublisher::publishTemperature(mqClient, currentTemperature, locationName);
+    MessagePublisher::publishTemperature(mqClient, currentTemperature, String(locationName.c_str()));
     previousTemperatureRef = currentTemperature;
     lastPublishTimeTempRef = now;
   }
@@ -1109,7 +1109,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishHumidity...\n");
-    MessagePublisher::publishHumidity(mqClient, currentHumidity, locationName);
+    MessagePublisher::publishHumidity(mqClient, currentHumidity, String(locationName.c_str()));
     previousHumidityRef = currentHumidity;
     lastPublishTimeHumRef = now;
   }

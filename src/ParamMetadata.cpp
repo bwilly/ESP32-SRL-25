@@ -7,11 +7,11 @@
 using namespace std; // This line allows you to use 'vector' instead of 'std::vector'
 
 std::vector<ParamMetadata> paramList = {
-    {"ssid", makePath(PARAM_WIFI_SSID), ParamMetadata::STRING},
-    {"pass", makePath(PARAM_WIFI_PASS), ParamMetadata::STRING},
-    {"location", makePath(PARAM_LOCATION), ParamMetadata::STRING},
-    {"config-url", makePath(PARAM_CONFIG_URL), ParamMetadata::STRING},
-    {"ota-url", makePath(PARAM_OTA_URL), ParamMetadata::STRING}
+    {std::string("ssid"), makePath(PARAM_WIFI_SSID), ParamMetadata::STRING},
+    {std::string("pass"), makePath(PARAM_WIFI_PASS), ParamMetadata::STRING},
+    {std::string("location"), makePath(PARAM_LOCATION), ParamMetadata::STRING},
+    {std::string("config-url"), makePath(PARAM_CONFIG_URL), ParamMetadata::STRING},
+    {std::string("ota-url"), makePath(PARAM_OTA_URL), ParamMetadata::STRING}
     // {"pinDht", makePath(PARAM_PIN_DHT), ParamMetadata::STRING},
     // {"pinAcs", makePath(PARAM_PIN_ACS), ParamMetadata::STRING},
     // {"mqtt-server", makePath(PARAM_MQTT_SERVER), ParamMetadata::STRING},

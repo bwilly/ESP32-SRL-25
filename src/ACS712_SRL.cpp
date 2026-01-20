@@ -88,8 +88,8 @@ static int resolveAcsPin()
     auto it = paramToVariableMap.find("pinAcs");
     if (it != paramToVariableMap.end() && it->second != nullptr)
     {
-        // NOTE: toInt() is Arduino String; safe here (after globals constructed)
-        int parsed = it->second->toInt();
+        // int parsed = it->second->toInt();
+        int parsed = std::stoi(*it->second);
         if (parsed > 0)
         {
             pin = parsed;

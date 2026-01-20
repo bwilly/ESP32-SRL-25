@@ -58,15 +58,15 @@ extern const char* FNAME_BOOTSTRAP;
 
 
 // Variables to save values from HTML form
-extern String ssid;
-extern String pass;
-extern String locationName; // used during regular operation, not only setup
-extern String configUrl; // http://salt-r420:9080/esp-config/salt will have instance name .json and global.json appended. /salt is the site name
-extern String otaUrl;
-extern String pinDht;
-extern String pinAcs;
-extern String mqttServer;
-extern String mqttPort;
+extern std::string ssid;
+extern std::string pass;
+extern std::string locationName; // used during regular operation, not only setup
+extern std::string configUrl; // http://salt-r420:9080/esp-config/salt will have instance name .json and global.json appended. /salt is the site name
+extern std::string otaUrl;
+extern std::string pinDht;
+extern std::string pinAcs;
+extern std::string mqttServer;
+extern std::string mqttPort;
 extern bool w1Enabled;
 
 
@@ -92,6 +92,6 @@ extern SensorGroupW1 w1Sensors;
 
 
 extern std::vector<ParamMetadata> paramList;
-extern std::map<String, String *> paramToVariableMap;
+extern std::map<std::string, std::string *> paramToVariableMap;
 extern std::map<String, bool *> paramToBoolMap;
 #endif // SHARED_VARS_H

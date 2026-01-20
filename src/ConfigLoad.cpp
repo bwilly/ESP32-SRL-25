@@ -62,119 +62,92 @@ static bool legacyApplyConfigJsonDoc(JsonDocument &doc)
 {
     // 1) String params (ssid, pass, location, pins, mqtt-server, etc.)
     for (auto &entry : paramToVariableMap) {
-        const String &key   = entry.first;
-        String       *value = entry.second;
+        const std::string &key   = entry.first;
+        std::string       *value = entry.second;
 
         if (!value) {
-            logger.log("ConfigLoad: string param '" + key + "' has null target pointer\n");
+            char buf[256];
+            snprintf(buf, sizeof(buf), "ConfigLoad: string param '%s' has null target pointer\n", key.c_str());
+            logger.log(buf);
             continue;
         }
 
-        // todo: put me back in the logger Jan13'26 (removing due to noise while refactoring config load)
-        // if (!doc.containsKey(key)) {
-        //     logger.log("ConfigLoad: string param '" + key + "' not present in JSON\n");
-        //     continue;
-        // }
-
         // Accept JSON string, number, or bool and stringify it
-        JsonVariant v = doc[key];
+        JsonVariant v = doc[key.c_str()];
         if (v.isNull()) {
-            logger.log("ConfigLoad: string param '" + key + "' present but null\n");
+            char buf[256];
+            snprintf(buf, sizeof(buf), "ConfigLoad: string param '%s' present but null\n", key.c_str());
+            logger.log(buf);
             continue;
         }
 
         if (v.is<const char*>()) {
-            *value = String(v.as<const char*>());
+            *value = v.as<const char*>();
         } else if (v.is<long>() || v.is<double>()) {
-            *value = String(v.as<double>(), 6);  // simple numeric → string
+            char numBuf[32];
+            snprintf(numBuf, sizeof(numBuf), "%.6f", v.as<double>());
+            *value = numBuf;
         } else if (v.is<bool>()) {
             *value = v.as<bool>() ? "1" : "0";
         } else {
             // Fallback: JSON-encode the value into a temporary string
             String tmp;
             serializeJson(v, tmp);
-            *value = tmp;
+            *value = tmp.c_str();
         }
 
-        logger.log("ConfigLoad: applied string param '" + key + "' = '" + *value + "'\n");
+        char buf[512];
+        snprintf(buf, sizeof(buf), "ConfigLoad: applied string param '%s' = '%s'\n", 
+                 key.c_str(), value->c_str());
+        logger.log(buf);
     }
-
-    // 2) Bool params (enableW1, enableDHT, enableAcs712, enableMQTT, etc.)
-    // for (auto &entry : paramToBoolMap) {
-    //     const String &key   = entry.first;
-    //     bool         *value = entry.second;
-
-    //     if (!value) {
-    //         logger.log("ConfigLoad: bool param '" + key + "' has null target pointer\n");
-    //         continue;
-    //     }
-
-    //     if (!doc.containsKey(key)) {
-    //         logger.log("ConfigLoad: bool param '" + key + "' not present in JSON\n");
-    //         continue;
-    //     }
-
-    //     JsonVariant v = doc[key];
-    //     if (v.isNull()) {
-    //         logger.log("ConfigLoad: bool param '" + key + "' present but null\n");
-    //         continue;
-    //     }
-
-    //     bool result = *value;  // default to existing
-
-    //     if (v.is<bool>()) {
-    //         result = v.as<bool>();
-    //     } else if (v.is<long>() || v.is<double>()) {
-    //         result = (v.as<long>() != 0);
-    //     } else if (v.is<const char*>()) {
-    //         String s = v.as<const char*>();
-    //         s.toLowerCase();
-    //         result = (s == "1" || s == "true" || s == "yes" || s == "on");
-    //     } else {
-    //         logger.log("ConfigLoad: bool param '" + key + "' has unsupported JSON type; leaving existing value\n");
-    //     }
-
-    //     *value = result;
-    //     logger.log("ConfigLoad: applied bool param '" + key + "' = " + String(*value ? "true\n" : "false\n"));
-    // }
 
     // 3) W1 sensors from w1-1 / w1-1-name ... w1-6
     for (int i = 0; i < 6; ++i) {
-        String hexKey  = "w1-" + String(i + 1);
-        String nameKey = hexKey + "-name";
+        char hexKey[16];
+        char nameKey[32];
+        snprintf(hexKey, sizeof(hexKey), "w1-%d", i + 1);
+        snprintf(nameKey, sizeof(nameKey), "%s-name", hexKey);
 
         // Address
         if (doc.containsKey(hexKey)) {
             const char *hexCStr = doc[hexKey].as<const char*>();
-            String hexStr = hexCStr ? String(hexCStr) : String();
+            std::string hexStr = hexCStr ? hexCStr : "";
 
-            if (!hexStr.isEmpty()) {
-                bool ok = hexStringToBytes(hexStr, w1Address[i], W1_NUM_BYTES);
+            if (!hexStr.empty()) {
+                bool ok = hexStringToBytes(hexStr.c_str(), w1Address[i], W1_NUM_BYTES);
                 if (!ok) {
-                    logger.log("ConfigLoad: invalid hex for '" + hexKey + "' = '" + hexStr + "'\n");
+                    char buf[256];
+                    snprintf(buf, sizeof(buf), "ConfigLoad: invalid hex for '%s' = '%s'\n", 
+                             hexKey, hexStr.c_str());
+                    logger.log(buf);
                 } else {
-                    logger.log("ConfigLoad: applied W1 address '" + hexKey + "' = '" + hexStr + "'\n");
+                    char buf[256];
+                    snprintf(buf, sizeof(buf), "ConfigLoad: applied W1 address '%s' = '%s'\n", 
+                             hexKey, hexStr.c_str());
+                    logger.log(buf);
                 }
             } else {
-                logger.log("ConfigLoad: W1 address key '" + hexKey + "' present but empty\n");
+                char buf[256];
+                snprintf(buf, sizeof(buf), "ConfigLoad: W1 address key '%s' present but empty\n", hexKey);
+                logger.log(buf);
             }
-        } else {
-            // todo: put me back in the logger Jan13'26 (removing due to noise while refactoring config load)
-            // logger.log("ConfigLoad: W1 address key '" + hexKey + "' not present in JSON\n");
         }
 
         // Name
         if (doc.containsKey(nameKey)) {
             const char *nm = doc[nameKey].as<const char*>();
             if (nm) {
-                w1Name[i] = String(nm);
-                logger.log("ConfigLoad: applied W1 name '" + nameKey + "' = '" + w1Name[i] + "'\n");
+                w1Name[i] = nm;
+                char buf[256];
+                snprintf(buf, sizeof(buf), "ConfigLoad: applied W1 name '%s' = '%s'\n", 
+                         nameKey, w1Name[i].c_str());
+                logger.log(buf);
             } else {
-                logger.log("ConfigLoad: W1 name key '" + nameKey + "' present but null\n");
+                char buf[256];
+                snprintf(buf, sizeof(buf), "ConfigLoad: W1 name key '%s' present but null\n", nameKey);
+                logger.log(buf);
             }
-        } else {
-            // todo: put me back in the logger Jan13'26 (removing due to noise while refactoring config load)
-            // logger.log("ConfigLoad: W1 name key '" + nameKey + "' not present in JSON\n");
         }
     }
 

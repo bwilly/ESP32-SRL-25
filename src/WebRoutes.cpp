@@ -7,7 +7,7 @@
 // Your project headers / globals
 #include "shared_vars.h"
 #include "HtmlVarProcessor.h"
-#include "ConfigDump.h"
+// #include "ConfigDump.h"
 #include "ConfigLoad.h"
 #include "TemperatureReading.h"
 #include "TemperatureSensor.h"
@@ -44,7 +44,7 @@ extern String g_otaUrl;
 extern bool g_otaRequested;
 
 // Legacy map still used by /ota/run currently
-extern std::map<String, String *> paramToVariableMap;
+extern std::map<std::string, std::string *> paramToVariableMap;
 
 // Your “processor” callback
 extern String processor(const String &var);
@@ -314,26 +314,29 @@ static void registerOtaRoutes(AsyncWebServer &server)
             return;
         }
 
-        String fwUrl = *(it->second);
-        fwUrl.trim();
+        std::string fwUrl = *(it->second);
+        
+        // Trim whitespace from both ends
+        fwUrl.erase(0, fwUrl.find_first_not_of(" \t\n\r"));
+        fwUrl.erase(fwUrl.find_last_not_of(" \t\n\r") + 1);
 
-        if (fwUrl.length() == 0) {
+        if (fwUrl.empty()) {
             request->send(400, "text/plain", "Empty 'ota-url' value in config");
             return;
         }
 
-        logger.log("OTA: requested via /ota/run, URL = " + fwUrl + "\n");
+        char buf[256];
+        snprintf(buf, sizeof(buf), "OTA: requested via /ota/run, URL = %s\n", fwUrl.c_str());
+        logger.log(buf);
 
         // schedule OTA (run in loop() to avoid async_tcp WDT)
-        g_otaUrl = fwUrl;
+        g_otaUrl = String(fwUrl.c_str());
         g_otaRequested = true;
 
-        request->send(200, "text/plain",
-                      "OTA scheduled from " + fwUrl +
-                          "\nDevice will reboot if update succeeds.");
+        std::string response = "OTA scheduled from " + fwUrl + "\nDevice will reboot if update succeeds.";
+        request->send(200, "text/plain", response.c_str());
     });
 }
-
 // -------------------------
 // Station-mode UI endpoints
 // -------------------------
@@ -357,7 +360,7 @@ static void registerStationUiRoutes(AsyncWebServer &server)
 
     server.on("/devicename", HTTP_GET, [](AsyncWebServerRequest *request) {
         // keep endpoint name stable; returning locationName matches your newer pattern
-        request->send(200, "text/html", locationName);
+        request->send(200, "text/html", String(locationName.c_str()));
     });
 
     server.on("/bssid", HTTP_GET, [](AsyncWebServerRequest *request) {

@@ -7,6 +7,8 @@
 #include "Logger.h"
 #include "ConfigLoad.h" // legacy 
 
+
+
 // Remote config JSON merge docs (kept off stack)
 static const size_t REMOTE_JSON_CAPACITY = 4096;
 static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteMergedDoc;
@@ -56,70 +58,83 @@ static bool readFileToString(const char *path, String &out)
 }
 
 static void fetchApplyAndMergeRemoteConfig(
-    Logger&       inLogger,
-    const String& url,
-    const char*   label,
-    String&       json,             // reused buffer to avoid extra allocs
-    JsonObject    mergedRoot,
-    bool&         anyRemoteApplied  // out flag
+    Logger&            inLogger,
+    const std::string& url,
+    const char*        label,
+    std::string&       json,
+    JsonObject         mergedRoot,
+    bool&              anyRemoteApplied
 )
 {
   logger = &inLogger;
 
-  if (url.length() == 0)
+  if (url.empty())
   {
     return;
   }
 
   if (!downloadConfigJson(url, json))
   {
-    logger->log(String("ConfigFetch: ") + label +
-               " config fetch FAILED or not found at " + url + "\n");
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+             "ConfigFetch: %s config fetch FAILED or not found at %s\n",
+             label, url.c_str());
+    logger->log(buf);
     return;
   }
 
-  logger->log(String("ConfigFetch: downloaded ") + label + " config from " + url +
-             " (" + String(json.length()) + " bytes)\n");
+  char buf[256];
+  snprintf(buf, sizeof(buf),
+           "ConfigFetch: downloaded %s config from %s (%zu bytes)\n",
+           label, url.c_str(), json.length());
+  logger->log(buf);
 
   // Apply to in-memory params
-  if (!legacyLoadConfigFromJsonString(json))
+  if (!legacyLoadConfigFromJsonString(json.c_str()))
   {
-    logger->log(String("ConfigFetch: ") + label + " JSON parse/apply FAILED\n");
+    snprintf(buf, sizeof(buf),
+             "ConfigFetch: %s JSON parse/apply FAILED\n",
+             label);
+    logger->log(buf);
     return;
   }
 
-  logger->log(String("ConfigFetch: ") + label + " JSON applied OK\n");
+  snprintf(buf, sizeof(buf),
+           "ConfigFetch: %s JSON applied OK\n",
+           label);
+  logger->log(buf);
 
   // Merge into remote snapshot doc
   g_remoteTmpDoc.clear();
-  DeserializationError err = deserializeJson(g_remoteTmpDoc, json);
+  DeserializationError err = deserializeJson(g_remoteTmpDoc, json.c_str());
   if (err)
   {
-    logger->log(String("ConfigFetch: ") + label +
-               " JSON re-parse FAILED for snapshot merge\n");
+    snprintf(buf, sizeof(buf),
+             "ConfigFetch: %s JSON re-parse FAILED for snapshot merge\n",
+             label);
+    logger->log(buf);
     return;
   }
 
   JsonObject src = g_remoteTmpDoc.as<JsonObject>();
   for (JsonPair kv : src)
   {
-    mergedRoot[kv.key()] = kv.value(); // instance overrides global on same key
+    mergedRoot[kv.key()] = kv.value();
   }
 
   anyRemoteApplied = true;
 }
 
-
 // todo:workingHere: refactor this to use ConfigCodec 
 // also, moved globals in here g_remoteMergedDoc, g_remoteTmpDoc
 void tryFetchAndApplyRemoteConfig(
     Logger&        logger,
-    const String&  configUrl,
-    const String&  locationName,
+    const std::string&  configUrl,
+    const std::string&  locationName,
     const char*    FNAME_CONFIGREMOTE
 )
 {
-  const String baseUrl = configUrl;
+  const std::string baseUrl = configUrl;
 
   if (baseUrl.length() == 0)
   {
@@ -128,19 +143,19 @@ void tryFetchAndApplyRemoteConfig(
   }
 
   // Build GLOBAL URL: <base>/global.json
-  String globalUrl = baseUrl;
-  if (!globalUrl.endsWith("/"))
+  std::string globalUrl = baseUrl;
+  if (!globalUrl.empty() && globalUrl.back() != '/')
   {
     globalUrl += "/";
   }
   globalUrl += "global.json"; // <-- make sure this says "global.json", not "global."
 
   // Build INSTANCE URL: <base>/<locationName>.json
-  String instanceUrl;
+  std::string instanceUrl;
   if (locationName.length() > 0)
   {
     instanceUrl = baseUrl;
-    if (!instanceUrl.endsWith("/"))
+    if (!instanceUrl.empty() && instanceUrl.back() != '/')
     {
       instanceUrl += "/";
     }
@@ -172,7 +187,7 @@ void tryFetchAndApplyRemoteConfig(
   JsonObject mergedRoot = g_remoteMergedDoc.to<JsonObject>();
 
   bool anyRemoteApplied = false;
-  String json;
+  std::string json;
 
   // GLOBAL then INSTANCE
   fetchApplyAndMergeRemoteConfig(logger, globalUrl, "GLOBAL", json, mergedRoot, anyRemoteApplied);

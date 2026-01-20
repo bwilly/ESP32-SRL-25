@@ -1,5 +1,9 @@
 
 
+Jan19'26
+ConfigFetch: remote config unchanged vs /config-remote.json; no persist, no reboot
+todo: above log isn't true as I changed the instance values. but the new val did make it to config on device. 
+
 Jan14'26
 
 todo: potential bugs 

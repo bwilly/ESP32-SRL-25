@@ -26,7 +26,7 @@ void writeFile(fs::FS &fs, const char *path, const char *message);
 void parseAndStoreHex(const String &value, uint8_t index);
 void loadLegacyPersistedValues();
 
-String makePath(const char *param); // Declaration of makePath
+std::string makePath(const char *param); // Declaration of makePath
 // Declare the function to load JSON data from SPIFFS
 void loadW1SensorConfigFromFile(fs::FS &fs, const char *path, SensorGroupW1 &w1Sensors);
 void saveW1SensorConfigToFile(fs::FS &fs, const char *path, SensorGroupW1 &w1Sensors);

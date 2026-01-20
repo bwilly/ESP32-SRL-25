@@ -5,9 +5,9 @@
 #include <ArduinoJson.h>
 #include <sstream>
 
-String makePath(const char *param)
+std::string makePath(const char *param)
 {
-    return String("/") + param + ".txt";
+    return "/" + std::string(param) + ".txt";
 }
 
 
@@ -21,17 +21,17 @@ void loadLegacyPersistedValues()
         String value = readFile(SPIFFS, param.spiffsPath.c_str());
 
         Serial.print("  ");
-        Serial.print(param.name);
+        Serial.print(param.name.c_str());
         Serial.print(" <- ");
-        Serial.print(param.spiffsPath);
+        Serial.print(param.spiffsPath.c_str());
         Serial.print(" = ");
 
         if (param.type == ParamMetadata::STRING)
         {
-            auto it = paramToVariableMap.find(param.name);
+            auto it = paramToVariableMap.find(param.name.c_str());
             if (it != paramToVariableMap.end())
             {
-                *(it->second) = value;
+                *(it->second) = value.c_str();
 
                 // Print assigned value
                 Serial.println(value.length() ? value : "<empty>");

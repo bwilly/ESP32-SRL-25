@@ -4,9 +4,9 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-bool downloadConfigJson(const String &url, String &outJson)
+bool downloadConfigJson(const std::string &url, std::string &outJson)
 {
-    outJson = "";  // clear any previous content
+    outJson.clear();  // clear any previous content
 
     if (WiFi.status() != WL_CONNECTED)
     {
@@ -16,9 +16,9 @@ bool downloadConfigJson(const String &url, String &outJson)
 
     HTTPClient http;
     Serial.print(F("s:downloadConfigJson: GET "));
-    Serial.println(url);
+    Serial.println(url.c_str());
 
-    if (!http.begin(url))
+    if (!http.begin(url.c_str()))
     {
         Serial.println(F("downloadConfigJson: http.begin() failed"));
         return false;
@@ -28,13 +28,14 @@ bool downloadConfigJson(const String &url, String &outJson)
 
     if (httpCode != HTTP_CODE_OK)
     {
-        Serial.print(F("s:downloadConfigJson: HTTP code "));
-        Serial.println(httpCode);
+        char buf[128];
+        snprintf(buf, sizeof(buf), "s:downloadConfigJson: HTTP code %d\n", httpCode);
+        Serial.print(buf);
         http.end();
         return false;
     }
 
-    String payload = http.getString();
+    String payload = http.getString();  // HTTPClient returns Arduino String
     http.end();
 
     if (payload.length() == 0)
@@ -43,10 +44,11 @@ bool downloadConfigJson(const String &url, String &outJson)
         return false;
     }
 
-    outJson = payload;
-    Serial.print(F("s:downloadConfigJson: received "));
-    Serial.print(outJson.length());
-    Serial.println(F(" bytes"));
+    outJson = payload.c_str();  // Convert Arduino String to std::string
+    
+    char buf[128];
+    snprintf(buf, sizeof(buf), "s:downloadConfigJson: received %zu bytes\n", outJson.length());
+    Serial.print(buf);
 
     return true;
 }
