@@ -6,13 +6,12 @@
 #include <ArduinoJson.h>
 #include "Logger.h"
 #include "ConfigLoad.h" // legacy 
-
+#include "ConfigCodec.h"
 
 
 // Remote config JSON merge docs (kept off stack)
-static const size_t REMOTE_JSON_CAPACITY = 4096;
-static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteMergedDoc;
-static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteTmpDoc;
+static StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_remoteMergedDoc;
+static StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_remoteTmpDoc;
 static Logger* logger = nullptr;
 
 

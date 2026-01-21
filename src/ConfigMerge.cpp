@@ -6,10 +6,10 @@
 #include <ArduinoJson.h>
 #include "Logger.h"
 #include "JsonMerge.h"
+#include "ConfigCodec.h"
 
 
 static Logger* logger = nullptr;
-static const size_t CONFIG_JSON_CAPACITY = 4096;
 
 static MergeOptions opt;  // nullDeletes=false, arraysById=true, idKey="id"
 
@@ -124,15 +124,19 @@ std::string instanceUrl(const std::string& baseUrl, const std::string& locationN
 
 
 
-static StaticJsonDocument<4096> mergeRemotes(
+static DynamicJsonDocument mergeRemotes(
     Logger&        inLogger,
     const std::string&  configUrl,
     const std::string&  locationName,
     const char*    mergedRemoteLocalFilename
 ) {
 
-  static StaticJsonDocument<CONFIG_JSON_CAPACITY> instanceDoc;
-  static StaticJsonDocument<CONFIG_JSON_CAPACITY> globalDoc;
+  // this was blowing up stack
+  // static StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> instanceDoc;
+  // static StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> globalDoc;
+
+DynamicJsonDocument instanceDoc(APP_CONFIG_JSON_CAPACITY);
+DynamicJsonDocument globalDoc(APP_CONFIG_JSON_CAPACITY);
 
   std::string globalJsonString;
   std::string gUrl = globalUrl(configUrl);
@@ -178,7 +182,7 @@ static StaticJsonDocument<4096> mergeRemotes(
   return remoteDoc; 
 }
 
-StaticJsonDocument<4096> buildAppConfig(
+DynamicJsonDocument buildAppConfig(
     Logger&        inLogger,
     const std::string&  configUrl,
     const std::string&  locationName,
@@ -187,9 +191,13 @@ StaticJsonDocument<4096> buildAppConfig(
     const char*    configFilename
 ) {
 
+  Serial.print("s:Free stack: ");
+  Serial.print(String(uxTaskGetStackHighWaterMark(NULL)).c_str());
+  Serial.print("\n");
+
   // Load previous remote snapshot
   std::string previousRemoteJson;
-  StaticJsonDocument<CONFIG_JSON_CAPACITY> previousRemoteDoc;
+  StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> previousRemoteDoc;
   bool hasPreviousRemote = readFileToString(mergedRemoteLocalFilename, previousRemoteJson);
   if(hasPreviousRemote) {
     deserializeJson(previousRemoteDoc, previousRemoteJson);
@@ -202,39 +210,43 @@ StaticJsonDocument<4096> buildAppConfig(
     "ConfigMerge: %s previous remote snapshot %s\n",
     hasPreviousRemote ? "found" : "no",
     mergedRemoteLocalFilename
-  ); 
-  logger->log(buf);
+  );
+  Serial.print(buf); 
+  // logger->log(buf);  
 
 
   auto remoteDoc = mergeRemotes(inLogger, configUrl, locationName, mergedRemoteLocalFilename);
 
-  // Compare snapshots *only on remote config*
-  if (hasPreviousRemote && (remoteDoc == previousRemoteDoc)) 
-  {
-    logger->log("ConfigMerge: remote config unchanged local copy; no persist.\n");
-  }
-  else
-  {
-    logger->log("ConfigMerge: remote config changed; persisting\n");
-    // Serialize new remote snapshot
-    std::string newRemoteJson;
-    serializeJson(remoteDoc, newRemoteJson);
-    writeStringToFile(mergedRemoteLocalFilename, newRemoteJson);
-  } 
+
+// Serialize both to strings for comparison
+std::string currentRemoteJson;
+serializeJson(remoteDoc, currentRemoteJson);
+
+// Compare snapshots *only on remote config*
+if (hasPreviousRemote && (currentRemoteJson == previousRemoteJson)) 
+{
+    inLogger.log("ConfigMerge: remote config unchanged local copy; no persist.\n");
+}
+else
+{
+    inLogger.log("ConfigMerge: remote config changed; persisting\n");
+    // Already serialized above, just write it
+    writeStringToFile(mergedRemoteLocalFilename, currentRemoteJson);
+}
   
   
   std::string bootJson;
   if (!readFileToString(bootstrapFilename, bootJson))
   {
-    logger->log("ConfigMerge: failed to read bootstrap file\n");
+    inLogger.log("ConfigMerge: failed to read bootstrap file\n");
     return remoteDoc;
   }
 
-  static StaticJsonDocument<CONFIG_JSON_CAPACITY> bootDoc;
+  static StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> bootDoc;
   DeserializationError error = deserializeJson(bootDoc, bootJson);
   if (error) {
-    logger->log("Failed to parse bootstrap JSON: ");
-    logger->log(error.c_str());
+    inLogger.log("Failed to parse bootstrap JSON: ");
+    inLogger.log(error.c_str());
   }
 
   deepMerge(remoteDoc.as<JsonVariant>(), bootDoc.as<JsonVariant>(), opt);
@@ -243,7 +255,7 @@ StaticJsonDocument<4096> buildAppConfig(
   std::string err1;
   auto prevConfigDoc = loadConfigJson(configFilename, err1);
   if(prevConfigDoc == fullDoc) {
-    logger->log("ConfigMerge: full config unchanged vs existing config; no persist, no reboot\n");
+    inLogger.log("ConfigMerge: full config unchanged vs existing config; no persist, no reboot\n");
     return prevConfigDoc;
   }
 
@@ -251,24 +263,24 @@ StaticJsonDocument<4096> buildAppConfig(
   std::string err;  
   if (!saveConfigJson(fullDoc.as<JsonVariant>(), err))
   {
-    logger->log("ConfigMerge: failed to save merged config to general json config\n");
+    inLogger.log("ConfigMerge: failed to save merged config to general json config\n");
 
     if (!err.empty()) {
-        logger->log("buildAppConfig: error=");
-        logger->log(err.c_str());
-        logger->log("\n");
+        inLogger.log("buildAppConfig: error=");
+        inLogger.log(err.c_str());
+        inLogger.log("\n");
     }
     else {
-        logger->log("buildAppConfig: no error detail provided\n");
+        inLogger.log("buildAppConfig: no error detail provided\n");
     }
 
     return fullDoc;
   }
-  logger->log("buildAppConfig: fully merged boot/global/instance config saved successfully as general config\n");
+  inLogger.log("buildAppConfig: fully merged boot/global/instance config saved successfully as general config\n");
 
 
-  logger->handle();
-  logger->flush(16);
+  inLogger.handle();
+  inLogger.flush(16);
 
 
   // Allow logger + UART/WiFi buffers to flush
@@ -278,6 +290,7 @@ StaticJsonDocument<4096> buildAppConfig(
   yield();
 
   ESP.restart();
+  return fullDoc; // just satisfy return type; won't reach here
 
 }
 

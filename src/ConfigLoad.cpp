@@ -11,7 +11,7 @@
 #include "shared_vars.h"   // paramToVariableMap, paramToBoolMap, w1Address, w1Name, W1_NUM_BYTES
 
 // Keep in sync with ConfigDump
-static const size_t CONFIG_JSON_CAPACITY = 4096;
+static const size_t CONFIG_JSON_CAPACITY = 2048;
 
 // Helper: parse an even-length hex string into a byte buffer
 // Returns true on success, false if invalid.
