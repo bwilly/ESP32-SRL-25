@@ -95,12 +95,13 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 #include "ConfigModel.h"
 #include "ConfigStorage.h"
 #include "ConfigFile.h"
+#include "ConfigMerge.h"
 
 #include "DeviceIdentity.h"
 
 #include "Logger.h"
 
-#include "ConfigRemoteMerge.h"
+// #include "ConfigRemoteMerge.h"
 
 Logger logger;
 
@@ -681,6 +682,7 @@ static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut, cons
   }
 
   // 4) Persist to /bootstrap.json in modular format
+  // todo: consolidate on this or writeStringToFile
   if (!ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp, g_configSaveDoc))
   {
     errOut = "Failed to write /bootstrap.json";
@@ -831,7 +833,8 @@ void setupStationMode()
 {
   // setup: path1 (Station Mode)
   // todo: configUrl and locationName should come from gConfig boot values
-  tryFetchAndApplyRemoteConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE);
+  // tryFetchAndApplyRemoteConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE);
+  buildAppConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE, FNAME_BOOTSTRAP, FNAME_CONFIG);
 
   logger.log("initDNS...\n");
   initDNS();

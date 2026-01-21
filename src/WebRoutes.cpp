@@ -67,7 +67,7 @@ static void registerRoutesIndex(AsyncWebServer &server)
 
         static const LinkRow rows[] = {
             // ---- Config/common ----
-            {"POST bootstrap JSON",                  "/config/post/bootstrap",                  "POST", "raw JSON (curl/Postman)"},
+            {"POST bootstrap JSON",                  "/config/post/bootstrap",                  "POST", "raw JSON (curl/Postman). Path: /config/post/bootstrap"},
             {"Show FNAME_BOOTSTRAP",                 "/config/show/FNAME_BOOTSTRAP",            "GET",  ""},
             {"Show FNAME_CONFIG",                    "/config/show/FNAME_CONFIG",               "GET",  ""},
             {"Show EFFECTIVE_CACHE_PATH (legacy)",   "/config/show/EFFECTIVE_CACHE_PATH",       "GET",  ""},
