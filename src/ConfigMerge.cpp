@@ -152,7 +152,7 @@ static DynamicJsonDocument mergeRemotes(
   }
 
   std::string instanceJsonString;
-  std::string iUrl = globalUrl(configUrl);
+  std::string iUrl = instanceUrl(configUrl, locationName);
   if (!downloadConfigJson(iUrl, instanceJsonString))
   {
     char buf[256];
@@ -178,8 +178,13 @@ static DynamicJsonDocument mergeRemotes(
 
   // Merge order: bootstrap < global < instance
   // this method only concerns itself with global < instance
-  deepMerge(instanceDoc.as<JsonVariant>(), globalDoc.as<JsonVariant>(), opt);
-  auto &remoteDoc = instanceDoc; // instanceDoc is now merged with global
+  // deepMerge(instanceDoc.as<JsonVariant>(), globalDoc.as<JsonVariant>(), opt);
+  // auto &remoteDoc = instanceDoc; // instanceDoc is now merged with global
+  
+  deepMerge(globalDoc.as<JsonVariant>(), instanceDoc.as<JsonVariant>(), opt);
+  auto &remoteDoc = globalDoc; // instanceDoc is now merged with global
+  
+  
   std::string newRemoteJson;
   serializeJson(remoteDoc, newRemoteJson);
 
