@@ -7,7 +7,7 @@
 
 class Logger;   // forward declaration. cpp will include full header
 
-StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> buildAppConfig(
+DynamicJsonDocument buildAppConfig(
     Logger&        inLogger,
     const std::string&  configUrl,
     const std::string&  locationName,

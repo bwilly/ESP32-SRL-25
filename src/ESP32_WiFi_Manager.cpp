@@ -834,7 +834,13 @@ void setupStationMode()
   // setup: path1 (Station Mode)
   // todo: configUrl and locationName should come from gConfig boot values
   // tryFetchAndApplyRemoteConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE);
-  buildAppConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE, FNAME_BOOTSTRAP, FNAME_CONFIG);
+  auto appConfigJsonDoc = buildAppConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE, FNAME_BOOTSTRAP, FNAME_CONFIG);
+  JsonObject root = appConfigJsonDoc.as<JsonObject>();
+  if(!configFromJson(root, gConfig)) {
+    logger.log("Error: configFromJsonFile failed to pull, compare and apply config JSON to gConfig\n");
+  } else {
+    logger.log("configFromJsonFile succeeded to pull, compare and apply config JSON to gConfig\n");
+  }
 
   logger.log("initDNS...\n");
   initDNS();
