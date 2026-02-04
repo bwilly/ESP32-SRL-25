@@ -50,6 +50,8 @@ Minimal diff
 -#include <hwcrypto/sha.h>
 +#include <esp32/sha.h>
 
+I have a copy of the corrected source at lib/RemoteDebug/WebSockets.cpp
+
 
 Then rebuild.
 

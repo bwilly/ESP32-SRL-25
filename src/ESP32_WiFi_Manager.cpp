@@ -97,6 +97,8 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 #include "ConfigFile.h"
 #include "ConfigMerge.h"
 
+#include "SpiffsFileStore.h"
+
 #include "DeviceIdentity.h"
 
 #include "Logger.h"
@@ -741,7 +743,7 @@ void setupSpiffsAndConfig()
   // 1) Load BOOTSTRAP config first (new source of truth for wifi + identity + base URLs)
   if (ConfigStorage::loadAppConfigFromFile(FNAME_BOOTSTRAP, gConfig))
   {
-    // no logger during bootstrap 
+    // no logger during bootstrap
     Serial.println("s:AppConfig: loaded BOOTSTRAP from /bootstrap.json into gConfig. Since this succeeded, shoudl skip legacy indie spiff files.\n");
   }
   else
@@ -834,9 +836,27 @@ void setupStationMode()
   // setup: path1 (Station Mode)
   // todo: configUrl and locationName should come from gConfig boot values
   // tryFetchAndApplyRemoteConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE);
-  auto appConfigJsonDoc = buildAppConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE, FNAME_BOOTSTRAP, FNAME_CONFIG);
-  JsonObject root = appConfigJsonDoc.as<JsonObject>();
-  if(!configFromJson(root, gConfig)) {
+
+  SpiffsFileStore fs;
+  ConfigFetch fetch(fs);
+  ConfigMerge cm(logger, fs, fetch);
+
+  const std::string mergedRemoteStr = FNAME_CONFIGREMOTE;
+  const std::string bootstrapStr = FNAME_BOOTSTRAP;
+  const std::string configFileStr = FNAME_CONFIG;
+
+  std::string err;
+  std::string jsonString = cm.buildAppConfigJson(
+      configUrl,
+      locationName,
+      mergedRemoteStr.c_str(),
+      bootstrapStr.c_str(),
+      configFileStr.c_str(),
+      err);
+
+
+  if (!configFromJson(jsonString, gConfig))
+  {
     logger.log("Error: configFromJsonFile failed to pull, compare and apply config JSON to gConfig\n");
   } else {
     logger.log("configFromJsonFile succeeded to pull, compare and apply config JSON to gConfig\n");
@@ -1138,7 +1158,6 @@ void loop()
   logger.handle();
   logger.flush(16);
 
-  
   // Apply pending bootstrap config if any
   if (g_bootstrapPending)
   {
@@ -1150,7 +1169,8 @@ void loop()
 
     // also delete the shared/general config file since bootstrap was just updated. eg, start fresh next boot.
     bool dOk = deleteJsonFile(SPIFFS, FNAME_CONFIG);
-    if(!dOk) {
+    if (!dOk)
+    {
       logger.log("Failed to delete existing config after bootstrap update\n");
     }
 
@@ -1158,8 +1178,8 @@ void loop()
     {
       char buf[96];
       snprintf(buf, sizeof(buf),
-              "Bootstrap: saved %s; rebooting\n",
-              writtenFile);
+               "Bootstrap: saved %s; rebooting\n",
+               writtenFile);
 
       logger.log(buf);
       logger.handle();
@@ -1172,7 +1192,6 @@ void loop()
       logger.log("Bootstrap: rejected: " + err + "\n");
     }
   }
-
 
   // Defered OTA execution from main loop (not async_tcp task)
   if (g_otaRequested)
