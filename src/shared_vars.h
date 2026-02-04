@@ -7,11 +7,14 @@
 #include <vector> // Include the vector header
 #include <map>
 #include "ParamMetadata.h"
+#include "CHT832xSensor.h"
 using namespace std;
 
 #include "Logger.h"
 extern Logger logger;
 
+#include "DeviceIdentity.h"
+extern DeviceIdentity gIdentity;
 
 // Search for parameter in HTTP POST request
 extern const char *PARAM_WIFI_SSID; // = "ssid";
@@ -44,23 +47,31 @@ extern const char *PARAM_ENABLE_CHT832x;
 extern const char *PARAM_ENABLE_SCT;  
 extern const char *PARAM_ENABLE_MQTT; 
 
+extern volatile bool g_bootstrapPending;
+extern String g_bootstrapBody;
+extern String g_bootstrapErr;
+
+// Path for the on-disk effective config cache
+extern const char* FNAME_CONFIGREMOTE;
+extern const char* FNAME_CONFIG;
+extern const char* FNAME_BOOTSTRAP;
+
 
 // Variables to save values from HTML form
-extern String ssid;
-extern String pass;
-extern String locationName; // used during regular operation, not only setup
-extern String configUrl; // http://salt-r420:9080/esp-config/salt will have instance name .json and global.json appended. /salt is the site name
-extern String otaUrl;
-extern String pinDht;
-extern String pinAcs;
-extern String mqttServer;
-extern String mqttPort;
+extern std::string ssid;
+extern std::string pass;
+extern std::string locationName; // used during regular operation, not only setup
+extern std::string configUrl; // http://salt-r420:9080/esp-config/salt will have instance name .json and global.json appended. /salt is the site name
+extern std::string otaUrl;
+extern std::string pinDht;
+extern std::string pinAcs;
+extern std::string mqttServer;
+extern std::string mqttPort;
 extern bool w1Enabled;
-extern bool dhtEnabled;
-extern bool mqttEnabled;
-extern bool acs712Enabled;
-extern bool cht832xEnabled;
-extern bool sctEnabled;
+
+
+// CHT832x I2C temperature/humidity sensor (full OO)
+extern CHT832xSensor envSensor;
 
 extern String mainDelay;
 extern uint8_t w1Address[6][8]; // todo:remove post refactor
@@ -81,6 +92,6 @@ extern SensorGroupW1 w1Sensors;
 
 
 extern std::vector<ParamMetadata> paramList;
-extern std::map<String, String *> paramToVariableMap;
+extern std::map<std::string, std::string *> paramToVariableMap;
 extern std::map<String, bool *> paramToBoolMap;
 #endif // SHARED_VARS_H

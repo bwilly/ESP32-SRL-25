@@ -1,0 +1,3 @@
+[submodule "lib/config-core"]
+	path = lib/config-core
+	url = /Users/bwilly/local/esp32_local/config-core

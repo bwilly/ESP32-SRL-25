@@ -1,5 +1,4 @@
 // In HtmlVarProcessor.cpp
-#pragma once
 #include "shared_vars.h"
 #include "SpiffsHandler.h"
 #include "SPIFFS.h"
@@ -79,12 +78,12 @@ String processor(const String &var)
     // Fallback: existing paramList processing for other variables
     for (const auto &paramMetadata : paramList)
     {
-        if (var == paramMetadata.name && paramMetadata.type == ParamMetadata::BOOLEAN)
+        if (var == paramMetadata.name.c_str() && paramMetadata.type == ParamMetadata::BOOLEAN)
         {
             String fileVal = readFile(SPIFFS, paramMetadata.spiffsPath.c_str());
 
             Serial.print("Reading ");
-            Serial.println(paramMetadata.name);
+            Serial.println(paramMetadata.name.c_str());
             Serial.print("Value: ");
             Serial.println(fileVal);
 
@@ -97,7 +96,7 @@ String processor(const String &var)
                 return "";
             }
         }
-        if (var == paramMetadata.name)
+        if (var == paramMetadata.name.c_str())
         {
             return readFile(SPIFFS, paramMetadata.spiffsPath.c_str());
         }

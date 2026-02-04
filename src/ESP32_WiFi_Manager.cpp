@@ -7,14 +7,14 @@
 // Copyright 2022-2023, 2024, 2025
 
 // Unstable Wifi post network/wifi failure
-      - plan for fix here is to switch base wifi platform code away from Rui Santos to
+//     - plan for fix here is to switch base wifi platform code away from Rui Santos to
 
 // Only supports DHT22 Sensor [obsolete]]
 
-Immediate need for DSB18b20 Sensor support and multi names for multi sensor. [done]
-I guess that will be accomplished via the hard coded promexporter names.
-Must be configurable.
-With ability to map DSB ID to a name, such as raw water in, post air cooler, post heat exchanger, etc
+// Immediate need for DSB18b20 Sensor support and multi names for multi sensor. [done]
+// I guess that will be accomplished via the hard coded promexporter names.
+// Must be configurable.
+// With ability to map DSB ID to a name, such as raw water in, post air cooler, post heat exchanger, etc
 
 // Configurable:
 // Location as mDNS Name Suffix
@@ -25,14 +25,14 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 /** some params can be set via UI. Anything params loaded later as the json web call will supersede UI params [Nov28'25] */
 
 /*********
- *
- * Thanks to
-  Rui Santos
-  Complete instructions at https://RandomNerdTutorials.com/esp32-wi-fi-manager-asyncwebserver/
-
-  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files.
-  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*********/
+// *
+// * Thanks to
+//  Rui Santos
+//  Complete instructions at https://RandomNerdTutorials.com/esp32-wi-fi-manager-asyncwebserver/
+//
+//  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files.
+//  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+// *********/
 
 // todo Nov25'25
 // why is volt-test trying to send dht?
@@ -44,6 +44,8 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
 #include "SPIFFS.h"
+
+#include "WebRoutes.h"
 
 #include "ConfigLoad.h"
 #include "ConfigFetch.h"
@@ -77,7 +79,7 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 #include "TemperatureSensor.h"
 #include "Config.h"
 #include "MessagePublisher.h"
-#include "ConfigDump.h"
+// #include "ConfigDump.h"
 #include "OtaUpdate.h"
 #include "CHT832xSensor.h"
 #include "SCT_SRL.h"
@@ -88,21 +90,32 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 // #include <AsyncTelnetSerial.h>
 #include <AsyncTCP.h> // dependency for the async streams
 
-// #include <BufferedLogger.h>
-#include "TelnetBridge.h"
+// #include "TelnetBridge.h" // stopped using this due to comppile conflcot in nov'25. would liek its feature returned for remote log monitor.
+
+#include "ConfigModel.h"
+#include "ConfigStorage.h"
+#include "ConfigFile.h"
+#include "ConfigMerge.h"
+
+#include "SpiffsFileStore.h"
+
+#include "DeviceIdentity.h"
 
 #include "Logger.h"
+
+// #include "ConfigRemoteMerge.h"
 
 Logger logger;
 
 // extern AsyncTelnetSerial telnetSerial;
 // static AsyncTelnetSerial telnetSerial(&Serial);
 
-
 // ---- Remote debug configuration ----
 constexpr uint16_t SRL_TELNET_PORT = 23;
-constexpr const char* SRL_TELNET_PASSWORD = "pw1234";
+constexpr const char *SRL_TELNET_PASSWORD = "saltmeadow";
 
+constexpr const char *AP_SSID_PREFIX = "srl-sesp-";
+constexpr const char *AP_PASSWORD = "saltmeadow"; // >= 8 chars
 
 // no good reason for these to be directives
 #define MDNS_DEVICE_NAME "sesp-"
@@ -117,10 +130,8 @@ unsigned long apStartTime = 0;   // Variable to track the start time in AP mode
 volatile bool g_otaRequested = false;
 String g_otaUrl;
 
-// Remote config JSON merge docs (kept off stack)
-static const size_t REMOTE_JSON_CAPACITY = 4096;
-static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteMergedDoc;
-static StaticJsonDocument<REMOTE_JSON_CAPACITY> g_remoteTmpDoc;
+// Config save buffers (reusable, not allocated per-call)
+StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 
 // BEFORE (something like this)
 // const char* version = APP_VERSION "::" APP_COMMIT_HASH ":: TelnetBridge";
@@ -185,8 +196,8 @@ namespace
 // DHT dht(DHTPIN, DHTTYPE);
 // DHT *dht = nullptr; // global pointer declaration
 
-// CHT832x I2C temperature/humidity sensor (full OO)
-CHT832xSensor envSensor(0x44); // default address; todo: externalize Dec3'25
+// // CHT832x I2C temperature/humidity sensor (full OO)
+// CHT832xSensor envSensor(0x44); // default address; todo: externalize Dec3'25
 
 // SctSensor sctSensor(32, 15.0f);  // default 15A;
 // choose the ADC1 pin you're using (example)
@@ -196,7 +207,7 @@ static const float SCT_RATED_AMPS = 15.0f;
 static const float FEEDPUMP_ON_THRESHOLD_AMPS = 0.5f;
 
 // SCT pump state tracking
-static bool sctFirstRun      = true;
+static bool sctFirstRun = true;
 static bool sctLastPumpState = false;
 // your OO instance (just like envSensor)
 SctSensor sctSensor(PIN_SCT, SCT_RATED_AMPS);
@@ -262,33 +273,33 @@ void onOTAEnd(bool success)
   // Log when OTA has finished
   if (success)
   {
-    Serial.println("OTA update finished successfully! Restarting...");
+    Serial.println("s:OTA update finished successfully! Restarting...");
     ESP.restart();
   }
   else
   {
-    Serial.println("There was an error during OTA update!");
+    Serial.println("s:There was an error during OTA update!");
   }
   // <Add your own code here>
 }
 void onOTAStart()
 {
   // Log when OTA has started
-  Serial.println("OTA update started!");
+  Serial.println("s:OTA update started!");
 }
 
 /* Append a semi-unique id to the name template */
-char *MakeMine(const char *NameTemplate)
-{
-  // uint16_t uChipId = GetDeviceId();
-  // String Result = String(NameTemplate) + String(uChipId, HEX);
-  String Result = String(NameTemplate) + String(locationName);
+// char *MakeMine(const char *NameTemplate)
+// {
+//   // uint16_t uChipId = GetDeviceId();
+//   // String Result = String(NameTemplate) + String(uChipId, HEX);
+//   String Result = String(NameTemplate) + String(locationName);
 
-  char *tab2 = new char[Result.length() + 1];
-  strcpy(tab2, Result.c_str());
+//   char *tab2 = new char[Result.length() + 1];
+//   strcpy(tab2, Result.c_str());
 
-  return tab2;
-}
+//   return tab2;
+// }
 
 // Function to handle Zabbix agent.ping
 void handleZabbixPing(AsyncWebServerRequest *request)
@@ -330,7 +341,7 @@ void handleAvailableMemory(AsyncWebServerRequest *request)
 // Function to handle agent.hostname
 void handleHostName(AsyncWebServerRequest *request)
 {
-  request->send(200, "text/plain", MakeMine(MDNS_DEVICE_NAME));
+  request->send(200, "text/plain", gIdentity.name());
 }
 
 // Function to handle zabbix.agent.availability
@@ -349,194 +360,6 @@ void handleWiFiSignalStrength(AsyncWebServerRequest *request)
   String rssiString = String(WiFi.RSSI());
   const char *rssiCharArray = rssiString.c_str();
   request->send(200, "text/plain", rssiCharArray);
-}
-
-static bool readFileToString(const char *path, String &out)
-{
-  File f = SPIFFS.open(path, FILE_READ);
-  if (!f)
-  {
-    return false;
-  }
-  out = f.readString();
-  f.close();
-  return true;
-}
-
-static bool writeStringToFile(const char *path, const String &data)
-{
-  File f = SPIFFS.open(path, FILE_WRITE); // truncates or creates
-  if (!f)
-  {
-    Serial.print(F("writeStringToFile: failed to open "));
-    Serial.print(path);
-    Serial.println(F(" for writing"));
-    return false;
-  }
-
-  size_t written = f.print(data);
-  f.close();
-
-  if (written != data.length())
-  {
-    Serial.print(F("writeStringToFile: short write to "));
-    Serial.print(path);
-    Serial.print(F(" (expected "));
-    Serial.print(data.length());
-    Serial.print(F(" bytes, wrote "));
-    Serial.print(written);
-    Serial.println(F(")"));
-    return false;
-  }
-
-  return true;
-}
-
-void tryFetchAndApplyRemoteConfig()
-{
-  const String baseUrl = configUrl;
-
-  if (baseUrl.length() == 0)
-  {
-    logger.log("ConfigFetch: base configUrl is empty; cannot fetch remote config\n");
-    return;
-  }
-
-  // Build GLOBAL URL: <base>/global.json
-  String globalUrl = baseUrl;
-  if (!globalUrl.endsWith("/"))
-  {
-    globalUrl += "/";
-  }
-  globalUrl += "global.json"; // <-- make sure this says "global.json", not "global."
-
-  // Build INSTANCE URL: <base>/<locationName>.json
-  String instanceUrl;
-  if (locationName.length() > 0)
-  {
-    instanceUrl = baseUrl;
-    if (!instanceUrl.endsWith("/"))
-    {
-      instanceUrl += "/";
-    }
-    instanceUrl += locationName + ".json";
-  }
-  else
-  {
-    logger.log("ConfigFetch: locationName is empty; will only attempt GLOBAL config\n");
-  }
-
-  // Load previous remote snapshot
-  String previousRemoteJson;
-  bool hasPreviousRemote = readFileToString("/config-remote.json", previousRemoteJson);
-  if (hasPreviousRemote)
-  {
-    logger.log("ConfigFetch: found previous remote snapshot /config-remote.json\n");
-  }
-  else
-  {
-    logger.log("ConfigFetch: no previous /config-remote.json (first run or missing)\n");
-  }
-
-  // Clear and prepare merged remote doc
-  g_remoteMergedDoc.clear();
-  JsonObject mergedRoot = g_remoteMergedDoc.to<JsonObject>();
-
-  bool anyRemoteApplied = false;
-  String json;
-
-  auto fetchApplyAndMerge = [&](const String &url, const char *label)
-  {
-    if (url.length() == 0)
-    {
-      return;
-    }
-
-    if (!downloadConfigJson(url, json))
-    {
-      logger.log(String("ConfigFetch: ") + label +
-                 " config fetch FAILED or not found at " + url + "\n");
-      return;
-    }
-
-    logger.log(String("ConfigFetch: downloaded ") + label + " config from " + url +
-               " (" + String(json.length()) + " bytes)\n");
-
-    // Apply to in-memory params
-    if (!loadConfigFromJsonString(json))
-    {
-      logger.log(String("ConfigFetch: ") + label + " JSON parse/apply FAILED\n");
-      return;
-    }
-
-    logger.log(String("ConfigFetch: ") + label + " JSON applied OK\n");
-
-    // Merge into remote snapshot doc
-    g_remoteTmpDoc.clear();
-    DeserializationError err = deserializeJson(g_remoteTmpDoc, json);
-    if (err)
-    {
-      logger.log(String("ConfigFetch: ") + label +
-                 " JSON re-parse FAILED for snapshot merge\n");
-      return;
-    }
-
-    JsonObject src = g_remoteTmpDoc.as<JsonObject>();
-    for (JsonPair kv : src)
-    {
-      mergedRoot[kv.key()] = kv.value(); // instance overrides global on same key
-    }
-
-    anyRemoteApplied = true;
-  };
-
-  // GLOBAL then INSTANCE
-  fetchApplyAndMerge(globalUrl, "GLOBAL");
-  if (instanceUrl.length() > 0)
-  {
-    fetchApplyAndMerge(instanceUrl, "INSTANCE");
-  }
-
-  if (!anyRemoteApplied)
-  {
-    logger.log("ConfigFetch: no remote configs applied; leaving local config as-is; no reboot\n");
-    return;
-  }
-
-  // Serialize new remote snapshot
-  String newRemoteJson;
-  serializeJson(g_remoteMergedDoc, newRemoteJson);
-
-  // Compare snapshots *only on remote config*
-  if (hasPreviousRemote && (newRemoteJson == previousRemoteJson))
-  {
-    logger.log("ConfigFetch: remote config unchanged vs /config-remote.json; no persist, no reboot\n");
-    return;
-  }
-
-  logger.log("ConfigFetch: remote config changed; persisting and rebooting\n");
-
-  // Persist remote snapshot
-  if (writeStringToFile("/config-remote.json", newRemoteJson))
-  {
-    logger.log("ConfigFetch: wrote new remote snapshot to /config-remote.json\n");
-  }
-  else
-  {
-    logger.log("ConfigFetch: FAILED to write /config-remote.json\n");
-  }
-
-  // Persist full effective config
-  if (saveEffectiveCacheToFile(EFFECTIVE_CACHE_PATH))
-  {
-    logger.log("ConfigFetch: persisted merged effective config EFFECTIVE_CACHE_PATH; rebooting\n");
-  }
-  else
-  {
-    logger.log("ConfigFetch: FAILED to persist merged config to EFFECTIVE_CACHE_PATH; rebooting anyway\n");
-  }
-
-  ESP.restart();
 }
 
 // Function to initialize the Zabbix agent server
@@ -575,34 +398,34 @@ void initSPIFFS()
 {
   if (!SPIFFS.begin(true))
   {
-    Serial.println("An error has occurred while mounting SPIFFS");
+    Serial.println("s:An error has occurred while mounting SPIFFS");
   }
-  Serial.println("SPIFFS mounted successfully");
+  Serial.println("s:SPIFFS mounted successfully");
 
-  loadPersistedValues();
+  // loadLegacyPersistedValues();
 }
 
 bool initWiFi()
 {
   if (ssid == "")
   {
-    Serial.println("Undefined SSID.");
+    Serial.println("s:Undefined SSID.");
     return false;
   }
 
-  Serial.println("Setting WiFi to WIFI_STA...");
+  Serial.println("s:Setting WiFi to WIFI_STA...");
 
   WiFi.disconnect(true);
   // delay(180);
   // Set custom hostname
-  if (!WiFi.setHostname(MakeMine(MDNS_DEVICE_NAME)))
+  if (!WiFi.setHostname(gIdentity.name()))
   {
-    Serial.println("Error setting hostname");
+    Serial.println("s:Error setting hostname");
   }
   else
   {
-    Serial.print("Setting DNS hostname to: ");
-    Serial.println(MakeMine(MDNS_DEVICE_NAME));
+    Serial.print("s:Setting DNS hostname to: ");
+    Serial.println(gIdentity.name());
   }
   WiFi.mode(WIFI_STA);
 
@@ -611,7 +434,7 @@ bool initWiFi()
   // WiFi.begin(ssid.c_str(), pass.c_str());
 
   int n = WiFi.scanNetworks();
-  Serial.println("Scan complete");
+  Serial.println("s:Scan complete");
   for (int i = 0; i < n; ++i)
   {
     Serial.print("SSID: ");
@@ -623,7 +446,7 @@ bool initWiFi()
   // Add Wi-Fi networks to WiFiMulti
   wifiMulti.addAP(ssid.c_str(), pass.c_str());
 
-  Serial.println("Connecting to Wi-Fi; looking for the strongest mesh node...");
+  Serial.println("s:Connecting to Wi-Fi; looking for the strongest mesh node...");
 
   // Start the connection attempt
   unsigned long startAttemptTime = millis();
@@ -642,7 +465,7 @@ bool initWiFi()
     unsigned long currentMillis = millis();
     if (currentMillis - startAttemptTime >= interval)
     {
-      Serial.println("Failed to connect after interval timeout.");
+      Serial.println("s:Failed to connect after interval timeout.");
 
       // Note: WiFi.reasonCode() can provide additional reason if available
       // if (WiFi.status() != WL_CONNECTED)
@@ -660,10 +483,10 @@ bool initWiFi()
   }
 
   // Successful connection
-  Serial.println("\nWiFi connected");
-  Serial.print("IP address: ");
+  Serial.println("\ns:WiFi connected");
+  Serial.print("s:IP address: ");
   Serial.println(WiFi.localIP());
-  Serial.print("Connected to BSSID: ");
+  Serial.print("s:Connected to BSSID: ");
   Serial.println(WiFi.BSSIDstr());
 
   return true;
@@ -671,22 +494,22 @@ bool initWiFi()
 
 void AdvertiseServices()
 {
-  Serial.println("AdvertiseServices on mDNS...");
-  char *MyName = MakeMine(MDNS_DEVICE_NAME);
-  if (MDNS.begin(MyName))
-  {
-    Serial.println(F("mDNS responder started"));
-    Serial.print(F("I am: "));
-    Serial.println(MyName);
+  Serial.println("s:AdvertiseServices on mDNS...");
+  const char *myName = gIdentity.name();
 
-    // Add service to MDNS-SD
+  if (MDNS.begin(myName))
+  {
+    Serial.println(F("s:mDNS responder started"));
+    Serial.print(F("s:I am: "));
+    Serial.println(myName);
+
     MDNS.addService(SERVICE_NAME, SERVICE_PROTOCOL, SERVICE_PORT);
   }
   else
   {
     while (1)
     {
-      Serial.println(F("Error setting up MDNS responder"));
+      Serial.println(F("s:Error setting up MDNS responder"));
       delay(1000);
     }
   }
@@ -772,14 +595,14 @@ void setupDS18b20(void)
   temptSensor.sensors.begin();
 
   // locate devices on the bus
-  Serial.println("Locating devices...");
+  Serial.println("s:Locating devices...");
   Serial.print("Found ");
   deviceCount = temptSensor.sensors.getDeviceCount();
   Serial.print(deviceCount, DEC);
   Serial.println(" devices.");
   Serial.println("");
 
-  Serial.println("Printing addresses...");
+  Serial.println("s:Printing addresses...");
   for (int i = 0; i < deviceCount; i++)
   {
     Serial.print("Sensor ");
@@ -813,7 +636,67 @@ void populateW1Addresses(uint8_t w1Address[6][8], String w1Name[6], const Sensor
   }
 }
 
-// Entry point
+static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut, const char *&outWrittenFilename)
+{
+  // Default it early so caller always gets something predictable.
+  outWrittenFilename = FNAME_BOOTSTRAP;
+
+  // 1) Parse JSON (sanity check)
+  StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> doc;
+  DeserializationError err = deserializeJson(doc, jsonBody);
+  if (err)
+  {
+    errOut = String("JSON parse error: ") + err.c_str();
+    return false;
+  }
+
+  // 2) Apply into a temp AppConfig so we can validate without clobbering gConfig
+  AppConfig tmp = gConfig; // start from current defaults
+  JsonObject root = doc.as<JsonObject>();
+  if (!configFromJson(root, tmp))
+  {
+    errOut = "configFromJson failed";
+    return false;
+  }
+
+  // 3) Minimal bootstrap validation (tweak rules as you like)
+  //    If you want AP bootstrap to ONLY set wifi + identity, keep it strict here.
+  if (tmp.boot.wifi.ssid.empty())
+  {
+    errOut = "Missing required field: wifi.ssid";
+    return false;
+  }
+  if (tmp.boot.wifi.pass.empty())
+  {
+    errOut = "Missing required field: wifi.pass";
+    return false;
+  }
+  if (tmp.boot.identity.locationName.empty())
+  {
+    errOut = "Missing required field: identity.locationName";
+    return false;
+  }
+
+  // Default instance to locationName if omitted
+  if (tmp.boot.identity.instance.empty())
+  {
+    tmp.boot.identity.instance = tmp.boot.identity.locationName;
+  }
+
+  // 4) Persist to /bootstrap.json in modular format
+  // todo: consolidate on this or writeStringToFile
+  if (!ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp, g_configSaveDoc))
+  {
+    errOut = "Failed to write /bootstrap.json";
+    return false;
+  }
+
+  // 5) Also update live gConfig (optional but useful for immediate debug endpoints)
+  // gConfig = tmp; 
+
+  return true;
+}
+
 // Entry point
 void setup()
 {
@@ -831,95 +714,163 @@ void setup()
   // Decide which path: Station vs AP
   if (initWiFi()) // Station Mode
   {
+    // Start Telnet logger
     logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
-  logger.log("boot\n");
+    logger.log("Wifi and Telnet logger shoudl now be functioning.\n");
     setupStationMode();
   }
   else
   {
-    logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
-  logger.log("boot\n");
+    // IMPORTANT:
+    // Do NOT start logger.begin() here. It starts a WiFiServer (RemoteDebug) which
+    // requires lwIP/tcpip to be ready. In AP path, that isn't true yet because
+    // softAP hasn't been started.
+    //
+    // Start logger.begin() inside setupAccessPointMode() AFTER WiFi.softAP(...).
+
+    // logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
+    // logger.log("boot\n");
+
     setupAccessPointMode();
   }
 }
 
 void setupSpiffsAndConfig()
 {
-  Serial.println("initSpiffs...");
+  Serial.println("s:initSpiffs...");
   initSPIFFS();
 
-  // Try to load a flat JSON config from /config.json.
-  // If present and valid, it will override the legacy per-param SPIFFS values
-  // that loadPersistedValues() just populated.
-  if (loadEffectiveCacheFromFile(EFFECTIVE_CACHE_PATH))
+  // 1) Load BOOTSTRAP config first (new source of truth for wifi + identity + base URLs)
+  if (ConfigStorage::loadAppConfigFromFile(FNAME_BOOTSTRAP, gConfig))
   {
-    Serial.println("ConfigLoad: EFFECTIVE_CACHE_PATH = '/config.effective.cache.json'loaded and applied (overrides per-param SPIFFS files).");
+    // no logger during bootstrap
+    Serial.println("s:AppConfig: loaded BOOTSTRAP from /bootstrap.json into gConfig. Since this succeeded, shoudl skip legacy indie spiff files.\n");
   }
   else
   {
-    Serial.println("ConfigLoad: no EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' (or parse error); using values from loadPersistedValues() which are the params from UI.");
-  }
+    // no logger during bootstrap
+    Serial.println("s:AppConfig: no /bootstrap.json (or parse error). Will try legacy bootstrap migration next.\n");
 
-  // i am commenting out below b/c i don't believe it has purpose (bwilly)
-  // Set GPIO 2 as an OUTPUT
-  // Serial.println("ledPin mode and digitalWrite...");
-  // pinMode(ledPin, OUTPUT);
-  // digitalWrite(ledPin, LOW);
+    // 1a) Legacy bootstrap migration path (one-time):
+    // loadPersistedValues() reads /ssid.txt /pass.txt /location.txt /config-url.txt /ota-url.txt
+    // We only migrate *bootstrap keys*.
+    loadLegacyPersistedValues();
 
-  // const char *w1Paths[3] = {w1_1Path.c_str(), w1_2Path.c_str(), w1_3Path.c_str()};
-  // for (int i = 0; i < 3; i++)
-  // {
-  //   loadW1AddressFromFile(SPIFFS, w1Paths[i], i);
-  // }
-
-  // w1Name[0] = readFile(SPIFFS, w1_1_name_Path.c_str());
-  // w1Name[1] = readFile(SPIFFS, w1_2_name_Path.c_str());
-  // w1Name[2] = readFile(SPIFFS, w1_3_name_Path.c_str());
-
-  // Load parameters from SPIFFS using paramList
-  // replaces commented out code directly above
-  for (const auto &paramMetadata : paramList)
-  {
-    if (paramMetadata.name.startsWith(PARAM_W1_1_NAME)) // just match the first w1 as the delegated loaders will load them all
+    // If legacy has at least SSID + PASS + LOCATION, write bootstrap.json
+    // NOTE: This assumes ssid/pass/locationName/configUrl/otaUrl are the legacy globals you already have.
+    if (ssid.length() > 0 && pass.length() > 0 && locationName.length() > 0)
     {
-      // loadW1SensorConfigFromFile(SPIFFS, paramMetadata.spiffsPath.c_str(), w1Sensors.sensors);
-      loadW1SensorConfigFromFile(SPIFFS, "/w1Json", w1Sensors); // moved away from coupleing file name of storage to teh paramMetaData. maybe i should use it. nov'24
+      AppConfig tmp = gConfig; // keep defaults
+      tmp.boot.wifi.ssid = std::string(ssid.c_str());
+      tmp.boot.wifi.pass = std::string(pass.c_str());
 
-      // populate the arrays that TemperatureSensor consumes
-      populateW1Addresses(w1Address, w1Name, w1Sensors);
+      tmp.boot.identity.locationName = std::string(locationName.c_str());
+
+      // Default instance to locationName (your rule)
+      if (tmp.boot.identity.instance.empty())
+      {
+        tmp.boot.identity.instance = tmp.boot.identity.locationName;
+      }
+
+      // If you have these in legacy:
+      // configUrl = "http://salt-r420:9080/esp-config/salt"
+      // otaUrl    = "http://.../firmware.bin"
+      if (configUrl.length() > 0)
+      {
+        tmp.boot.remote.configBaseUrl = std::string(configUrl.c_str());
+      }
+      if (otaUrl.length() > 0)
+      {
+        tmp.boot.remote.otaUrl = std::string(otaUrl.c_str());
+      }
+
+      if (ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp, g_configSaveDoc))
+      {
+        Serial.println("s:AppConfig: migrated legacy bootstrap params -> /bootstrap.json\n");
+        gConfig = tmp;
+      }
+      else
+      {
+        Serial.println("s:AppConfig: FAILED to write /bootstrap.json during legacy migration\n");
+      }
     }
-    // Add else if blocks here for loading other specific parameter types if needed
+    else
+    {
+      Serial.println("s:AppConfig: legacy bootstrap values incomplete; staying unconfigured (AP mode expected)\n");
+    }
   }
 
-  // ip = readFile(SPIFFS, ipPath);
-  // gateway = readFile(SPIFFS, gatewayPath);
-  Serial.println(ssid);
-  Serial.println(pass);
-  Serial.println(locationName);
-  // Serial.println(ip);
-  // Serial.println(gateway);
+  // 2) Apply bootstrap values into your legacy globals that initWiFi() expects
+  // (You can delete these legacy globals later, but for now keep it explicit)
+  ssid = gConfig.boot.wifi.ssid;
+  pass = gConfig.boot.wifi.pass;
+  locationName = gConfig.boot.identity.locationName.c_str();
+
+  gIdentity.init(MDNS_DEVICE_NAME, gConfig.boot.identity.locationName.c_str());
+
+  // configUrl in your code is now baseUrl like http://salt-r420:9080/esp-config/salt
+  configUrl = gConfig.boot.remote.configBaseUrl;
+
+  // otaUrl legacy string (if still used anywhere)
+  otaUrl = gConfig.boot.remote.otaUrl.c_str();
+  mainDelay = gConfig.timing.mainDelayMs;
+
+  // 3) Now load the effective runtime cache (mqtt/sensors/pins/etc)
+  // if (loadEffectiveCacheFromFile(EFFECTIVE_CACHE_PATH))
+  // {
+  //   Serial.println("ConfigLoad: EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' loaded and applied (overrides per-param SPIFFS files).");
+  // }
+  // else
+  // {
+  //   Serial.println("ConfigLoad: no EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' (or parse error); continuing with bootstrap-only config.");
+  // }
+  Serial.println("s:serial output. assuming logger not yet started.");
+  Serial.println(ssid.c_str());
+  Serial.println(pass.c_str());
+  Serial.println(String(locationName.c_str()));
+  Serial.println(mainDelay);
 }
 
 void setupStationMode()
 {
   // setup: path1 (Station Mode)
+  // todo: configUrl and locationName should come from gConfig boot values
+  // tryFetchAndApplyRemoteConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE);
 
-  tryFetchAndApplyRemoteConfig();
+  SpiffsFileStore fs;
+  ConfigFetch fetch(fs);
+  ConfigMerge cm(logger, fs, fetch);
 
-  // Start Telnet stream
-  // TelnetStream.begin();            // start Telnet server on port 23
-  // initTelnet();
+  const std::string mergedRemoteStr = FNAME_CONFIGREMOTE;
+  const std::string bootstrapStr = FNAME_BOOTSTRAP;
+  const std::string configFileStr = FNAME_CONFIG;
 
-  // (B) Start async Telnet-to-Serial forwarding:
-  //     - 115200 is the baudrate to mirror (must match Serial.begin)
-  //     - true  = link Telnet <-> Serial
-  //     - false = don’t publish mDNS name
+  std::string err;
+  std::string jsonString = cm.buildAppConfigJson(
+      configUrl,
+      locationName,
+      mergedRemoteStr.c_str(),
+      bootstrapStr.c_str(),
+      configFileStr.c_str(),
+      err);
 
-  // telnetSerial.begin(115200, true, false);
-
-  // start our async Telnet server
-  initTelnetServer();
-  logger.logf("Boot: IP=%s\n", WiFi.localIP().toString().c_str());
+  if (!configFromJson(jsonString, gConfig))
+  {
+    if (!err.empty())
+    {
+      logger.log("Error: configFromJsonFile failed - ");
+      logger.log(err.c_str());
+      logger.log("\n");
+    }
+    else
+    {
+      logger.log("Error: configFromJsonFile failed to pull, compare and apply config JSON to gConfig\n");
+    }
+  }
+  else
+  {
+    logger.log("configFromJsonFile succeeded to pull, compare and apply config JSON to gConfig\n");
+  }
 
   logger.log("initDNS...\n");
   initDNS();
@@ -928,217 +879,30 @@ void setupStationMode()
   initZabbixServer();
 
   // @pattern
-  bool dhtEnabledValue = *(paramToBoolMap["enableDHT"]);
-  if (dhtEnabledValue)
+  if (gConfig.sensors.dht.enabled)
   {
-    initSensorTask(); // dht
+    logger.log("DHT: enabled via gConfig, starting sensor task\n");
+    initSensorTask(gConfig.sensors.dht.pin);
   }
-  if (acs712Enabled)
+
+  if (gConfig.sensors.acs.enabled)
   {
     setupACS712();
   }
 
   // I2C pins for CHT832x
-  Wire.begin(32, 33); // todo:externalize: why is this here instead of inside the instantiation of the CHT sensor? Dec6'25 
-  if (cht832xEnabled)
+  Wire.begin(32, 33); // todo:externalize: why is this here instead of inside the instantiation of the CHT sensor? Dec6'25
+  if (gConfig.sensors.cht.enabled)
   {
     envSensor.begin();
   }
 
-  
-  if(sctEnabled) {
+  if (gConfig.sensors.sct.enabled)
+  {
     sctSensor.begin();
   }
 
-  logger.log("set web root /index.html...\n");
-  // Route for root / web page
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(SPIFFS, "/index.html", "text/html", false, processor); });
-  server.serveStatic("/", SPIFFS, "/");
-
-  // Route to set GPIO state to HIGH
-  server.on("/on", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-      digitalWrite(ledPin, HIGH);
-      request->send(SPIFFS, "/index.html", "text/html", false, processor); });
-
-  // Route to set GPIO state to LOW
-  server.on("/off", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-      digitalWrite(ledPin, LOW);
-      request->send(SPIFFS, "/index.html", "text/html", false, processor); });
-
-  // Route to Prometheus Metrics Exporter
-  server.on("/metrics", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(200, "text/html", readAndGeneratePrometheusExport(locationName.c_str())); });
-
-  server.on("/devicename", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(200, "text/html", MakeMine(MDNS_DEVICE_NAME)); });
-
-  server.on("/bssid", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(200, "text/html", WiFi.BSSIDstr()); });
-
-  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-                  char buffer[32];  // Buffer to hold the string representation of the temperature
-                  float temperature = readDHTTemperature();
-                  snprintf(buffer, sizeof(buffer), "%.2f", temperature);
-                  request->send(200, "text/html", buffer); });
-
-  server.on("/cht/temperature", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-    char buffer[32];
-
-    float chtTemp = NAN;
-    float chtHum  = NAN;
-
-    if (envSensor.read(chtTemp, chtHum)) {
-        snprintf(buffer, sizeof(buffer), "%.2f", chtTemp);
-        request->send(200, "text/html", buffer);
-    } else {
-        request->send(500, "text/plain", "CHT read failed");
-    } });
-
-  server.on("/cht/humidity", HTTP_GET, [](AsyncWebServerRequest *request)
-{
-    char buffer[32];
-
-    float chtTemp = NAN;
-    float chtHum  = NAN;
-
-    if (envSensor.read(chtTemp, chtHum)) {
-        snprintf(buffer, sizeof(buffer), "%.2f", chtHum);
-        request->send(200, "text/html", buffer);
-    } else {
-        request->send(500, "text/plain", "CHT read failed");
-    }
-});
-
-
-  // copy/paste from setup section for AP -- changing URL path
-  // todo: consolidate this copied code
-  server.on("/manage", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(SPIFFS, "/wifimanager.html", "text/html", false, processor); });
-
-  server.on("/version", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(200, "text/html", version); });
-
-  server.on("/pins", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(200, "text/html", pinDht); });
-
-  server.on("/onewire", HTTP_GET, [](AsyncWebServerRequest *request)
-            {           
-                String result = printDS18b20();                     
-                request->send(200, "text/html", result); });
-
-  // todo: find out why some readings provide 129 now, and on prev commit, they returned -127 for same bad reading. Now, the method below return -127, but this one is now 129. Odd. Aug19 '23
-  server.on("/onewiretempt", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-              temptSensor.requestTemperatures();
-              TemperatureReading *readings = temptSensor.getTemperatureReadings();
-
-              // Use the readings to send a response, assume SendHTML can handle TemperatureReading array
-              request->send(200, "text/html", SendHTML(readings, MAX_READINGS));
-
-              // sensors.requestTemperatures();
-              // request->send(200, "text/html", SendHTML(sensors.getTempC(w1Address[0]), sensors.getTempC(w1Address[1]), sensors.getTempC(w1Address[2]))); });
-              // request->send(200, "text/html", SendHTMLxxx());
-            });
-
-  // todo: find out why some readings provide -127
-  server.on("/onewiremetrics", HTTP_GET, [](AsyncWebServerRequest *request)
-            {           
-                // sensors.requestTemperatures();
-                temptSensor.requestTemperatures();
-                TemperatureReading *readings = temptSensor.getTemperatureReadings();
-
-                // TemperatureReading readings[MAX_READINGS] = {
-                //     {w1Name[0].c_str(), sensors.getTempC(w1Address[0])},
-                //     {w1Name[1].c_str(), sensors.getTempC(w1Address[1])},
-                //     {w1Name[2].c_str(), sensors.getTempC(w1Address[2])},
-                //     {} // Ending marker
-                // };
-
-                request->send(200, "text/html", buildPrometheusMultiTemptExport(readings)); });
-
-
-  // View the locally stored working config
-  server.on("/config/effective-cache", HTTP_GET, [](AsyncWebServerRequest *request) {
-    const char *path = EFFECTIVE_CACHE_PATH;
-
-    if (!SPIFFS.exists(path)) {
-        request->send(404, "text/plain", "No effective cache file stored");
-        return;   
-    }
-
-    request->send(SPIFFS, path, "application/json");
-});
-
-  // View the last downloaded remote snapshot: /config-remote.json
-  server.on("/config/remote", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-      const char *path = "/config-remote.json";
-
-      if (!SPIFFS.exists(path)) {
-          request->send(404, "text/plain", "No /config-remote.json stored");
-          return;
-      }
-
-      request->send(SPIFFS, path, "application/json"); });
-
-  server.on("/ota/run", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-
-      auto it = paramToVariableMap.find("ota-url");
-      if (it == paramToVariableMap.end() || it->second == nullptr) {
-          request->send(400, "text/plain",
-                        "Missing or null 'ota-url' param in config");
-          return;
-      }
-
-      String fwUrl = *(it->second);
-      fwUrl.trim();
-
-      if (fwUrl.length() == 0) {
-          request->send(400, "text/plain",
-                        "Empty 'ota-url' value in config");
-          return;
-      }
-
-      logger.log("OTA: requested via /ota/run, URL = " + fwUrl + "\n");
-
-      // schedule OTA (run in loop() to avoid async_tcp WDT)
-      g_otaUrl = fwUrl;
-      g_otaRequested = true;
-
-      request->send(200, "text/plain",
-                    "OTA scheduled from " + fwUrl +
-                    "\nDevice will reboot if update succeeds."); });
-
-  server.on("/config/cache/clear", HTTP_GET, [](AsyncWebServerRequest *request) {
-    bool ok = clearConfigJsonCache(SPIFFS);
-    if (ok) {
-        request->send(200, "text/plain", "Config JSON cache cleared. It will not be used until remote config repopulates it.");
-    } else {
-        request->send(500, "text/plain", "Failed to clear config JSON cache.");
-    }
-});
-
-server.on("/device/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "Restarting...");
-    delay(300);   // allow response to flush
-    ESP.restart();
-});
-
-
-  
-                    // note: this is for the post from /manage. whereas, in the setup mode, both form and post are root
-  server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
-            {
-      handlePostParameters(request);
-      request->send(200, "text/plain", "Done. ESP will restart, connect to your AP");
-      delay(mainDelay.toInt()); // delay(3000);
-      ESP.restart(); });
+  registerWebRoutesStation(server);
 
   // uses path like server.on("/update")
   // AsyncElegantOTA.begin(&server);
@@ -1157,25 +921,22 @@ server.on("/device/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
 
   server.begin();
 
-  // Set MQTT server
-  logger.log("Setting MQTT server and port...\n");
-  logger.log(*paramToVariableMap["mqtt-server"]);
-  logger.log(*paramToVariableMap["mqtt-port"]);
+  // Set MQTT server using new AppConfig model (JSON-first, no legacy bridge)
+  logger.log("Setting MQTT server and port from gConfig.mqtt...\n");
+  logger.log(gConfig.mqtt.server.c_str());
+  logger.log(" : ");
+  logger.log(String(gConfig.mqtt.port).c_str());
   logger.log("\n");
 
-  if (paramToVariableMap.find("mqtt-server") != paramToVariableMap.end() &&
-      paramToVariableMap.find("mqtt-port") != paramToVariableMap.end())
+  if (gConfig.mqtt.server.length() > 0 && gConfig.mqtt.port > 0)
   {
-
-    const char *serverName = paramToVariableMap["mqtt-server"]->c_str();
-    int port = paramToVariableMap["mqtt-port"]->toInt();
-
-    mqClient.setServer(serverName, port);
+    mqClient.setServer(gConfig.mqtt.server.c_str(), gConfig.mqtt.port);
   }
   else
   {
-    logger.log("Error setting MQTT from params.\n");
+    logger.log("Error: MQTT config missing server or port in gConfig.mqtt; MQTT will be disabled\n");
   }
+
   logger.log("\nEntry setup loop complete.");
 }
 
@@ -1186,10 +947,10 @@ void setupAccessPointMode()
 
   apStartTime = millis(); // Record the start time in AP mode
 
-  Serial.println("Setting AP (Access Point)");
+  Serial.println("s:Setting AP (Access Point)");
 
   // Build base SSID (without prefix)
-  String base;
+  std::string base;
 
   if (locationName.length() > 0)
   {
@@ -1208,59 +969,28 @@ void setupAccessPointMode()
   }
 
   // Final SSID: ALWAYS prefixed with "sesp-"
-  String apSsid = "srl-sesp-" + base;
-
   // Guarantee SSID ≤ 31 chars (Wi-Fi limit)
-  if (apSsid.length() > 31)
-  {
-    apSsid = apSsid.substring(0, 31);
-  }
+  char apSsid[32];
+  snprintf(apSsid, sizeof(apSsid), "%s%s", AP_SSID_PREFIX, base.c_str());
 
-  WiFi.softAP(apSsid.c_str(), "saltmeadow");
+  WiFi.softAP(apSsid, AP_PASSWORD);
 
-  Serial.print("AP SSID: ");
+  Serial.print("s:AP SSID: ");
   Serial.println(apSsid);
 
   IPAddress IP = WiFi.softAPIP();
-  Serial.print("AP IP address: ");
+  Serial.print("s:AP IP address: ");
   Serial.println(IP);
+
+  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
+  logger.log("boot\n");
 
   if (!SPIFFS.begin(true))
   {
-    Serial.println("SPIFFS is out of scope per bwilly!");
+    Serial.println("s:SPIFFS is out of scope per bwilly!");
   }
   // Web Server Root URL
-  Serial.print("Setting web root path to /wifimanager.html...\n");
-
-    server.on("/config/cache/clear", HTTP_GET, [](AsyncWebServerRequest *request) {
-    bool ok = clearConfigJsonCache(SPIFFS);
-    if (ok) {
-        request->send(200, "text/plain", "Config JSON cache cleared. It will not be used until remote config repopulates it.");
-    } else {
-        request->send(500, "text/plain", "Failed to clear config JSON cache.");
-    }
-});
-
-server.on("/device/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "Restarting...");
-    delay(300);   // allow response to flush
-    ESP.restart();
-});
-
-
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(SPIFFS, "/wifimanager.html", "text/html", false, processor); });
-
-  server.serveStatic("/", SPIFFS, "/"); // for things such as CSS
-
-  Serial.print("Setting root POST and delegating to handlePostParameters...\n");
-  server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
-            {
-      handlePostParameters(request);
-      request->send(200, "text/plain", "Done. ESP will restart, connect to your AP");
-      delay(3000);
-      logger.log("Updated. Now restarting...\n");
-      ESP.restart(); });
+  registerWebRoutesAp(server);
 
   logger.log("Starting web server...\n");
   server.begin();
@@ -1268,11 +998,12 @@ server.on("/device/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
 
 void reconnectMQ()
 {
-  // while (!mqClient.connected() && (WiFi.getMode() == WIFI_AP))
+  const char *clientId = gIdentity.name();
+
   while (!mqClient.connected())
   {
     logger.log("Attempting MQTT connection...");
-    if (mqClient.connect(MakeMine(MDNS_DEVICE_NAME)))
+    if (mqClient.connect(clientId))
     {
       logger.log("connected\n");
     }
@@ -1297,17 +1028,17 @@ void publishSimpleMessage()
   {
     if (mqClient.publish(topic, message))
     {
-      Serial.print("Message published successfully: ");
+      Serial.print("s:Message published successfully: ");
       Serial.println(message);
     }
     else
     {
-      Serial.println("Message publishing failed.");
+      Serial.println("s:Message publishing failed.");
     }
   }
   else
   {
-    Serial.println("Not connected to MQTT broker.");
+    Serial.println("s:Not connected to MQTT broker.");
     Serial.println(mqClient.state());
 
     reconnectMQ();
@@ -1403,7 +1134,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishTemperature...\n");
-    MessagePublisher::publishTemperature(mqClient, currentTemperature, locationName);
+    MessagePublisher::publishTemperature(mqClient, currentTemperature, String(locationName.c_str()));
     previousTemperatureRef = currentTemperature;
     lastPublishTimeTempRef = now;
   }
@@ -1417,7 +1148,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishHumidity...\n");
-    MessagePublisher::publishHumidity(mqClient, currentHumidity, locationName);
+    MessagePublisher::publishHumidity(mqClient, currentHumidity, String(locationName.c_str()));
     previousHumidityRef = currentHumidity;
     lastPublishTimeHumRef = now;
   }
@@ -1436,6 +1167,41 @@ void loop()
 
   logger.handle();
   logger.flush(16);
+
+  // Apply pending bootstrap config if any
+  if (g_bootstrapPending)
+  {
+    g_bootstrapPending = false;
+
+    String err;
+    const char *writtenFile = nullptr;
+    bool ok = saveBootstrapConfigJson(g_bootstrapBody, err, writtenFile);
+
+    // also delete the shared/general config file since bootstrap was just updated. eg, start fresh next boot.
+    bool dOk = deleteJsonFile(SPIFFS, FNAME_CONFIG);
+    if (!dOk)
+    {
+      logger.log("Failed to delete existing config after bootstrap update\n");
+    }
+
+    if (ok)
+    {
+      char buf[96];
+      snprintf(buf, sizeof(buf),
+               "Bootstrap: saved %s; rebooting\n",
+               writtenFile);
+
+      logger.log(buf);
+      logger.handle();
+      logger.flush(16);
+      delay(200);
+      ESP.restart();
+    }
+    else
+    {
+      logger.log("Bootstrap: rejected: " + err + "\n");
+    }
+  }
 
   // Defered OTA execution from main loop (not async_tcp task)
   if (g_otaRequested)
@@ -1458,7 +1224,10 @@ void loop()
   {
     if (currentMillis - apStartTime >= AP_REBOOT_TIMEOUT)
     {
-      Serial.println("Rebooting due to extended time in AP mode...");
+      logger.log("Rebooting due to extended time in AP mode...");
+      Serial.println("s:Rebooting due to extended time in AP mode...");
+      delay(1000);
+      yield();
       ESP.restart();
     }
   }
@@ -1471,22 +1240,22 @@ void loop()
   // checking for WIFI connection
   if ((WiFi.status() != WL_CONNECTED) && (current_time - previous_time >= reconnect_delay))
   {
-    Serial.print("millis: ");
+    Serial.print("s:millis: ");
     Serial.println(millis());
-    Serial.print("previous_time: ");
+    Serial.print("s:previous_time: ");
     Serial.println(previous_time);
-    Serial.print("current_time: ");
+    Serial.print("s:current_time: ");
     Serial.println(current_time);
-    Serial.print("reconnect_delay: ");
+    Serial.print("s:reconnect_delay: ");
     Serial.println(reconnect_delay);
-    Serial.println("Reconnecting to WIFI network by restarting to leverage best AP algorithm");
+    Serial.println("s:Reconnecting to WIFI network by restarting to leverage best AP algorithm");
     // WiFi.disconnect();
     // WiFi.reconnect();
     ESP.restart();
     previous_time = current_time;
   }
 
-  if (mqttEnabled)
+  if (gConfig.mqtt.enabled)
   {
 
     reconnectMQ();
@@ -1499,7 +1268,7 @@ void loop()
     mqClient.loop();
 
     // @anti-pattern as compared to dhtEnabledValue? Maybe this is the bettr way and the dhtEnabledValue was mean for checkbox population? Mar4'25
-    if (dhtEnabled)
+    if (gConfig.sensors.dht.enabled)
     {
       float currentTemperature = readDHTTemperature();
       float currentHumidity = readDHTHumidity();
@@ -1515,7 +1284,7 @@ void loop()
     }
 
     // Dec3'25
-    if (cht832xEnabled)
+    if (gConfig.sensors.cht.enabled)
     {
       float chtTemp = NAN;
       float chtHum = NAN;
@@ -1535,41 +1304,37 @@ void loop()
       {
         logger.log("CHT832xSensor: read failed; skipping publish this cycle\n");
       }
-    } 
+    }
 
-    if(sctEnabled) {
-          float amps = sctSensor.readCurrentACRms();
-          logger.logf("iot.sct.current %.3fA pin=%d rated=%.0f\n",
-            amps, PIN_SCT, SCT_RATED_AMPS);        
-          sctSensor.serialOutAdcDebug(); // for debug only  
+    if (gConfig.sensors.sct.enabled)
+    {
+      float amps = sctSensor.readCurrentACRms();
+      logger.logf("iot.sct.current %.3fA pin=%d rated=%.0f\n",
+                  amps, PIN_SCT, SCT_RATED_AMPS);
+      sctSensor.serialOutAdcDebug(); // for debug only
     }
   }
 
-if (sctEnabled)
-{
+  if (gConfig.sensors.sct.enabled)
+  {
     float amps = fabsf(sctSensor.readCurrentACRms());
 
     bool pumpState = (amps > FEEDPUMP_ON_THRESHOLD_AMPS);
 
     if (sctFirstRun || pumpState != sctLastPumpState || pumpState)
     {
-        MessagePublisher::publishPumpState(
-            mqClient,
-            pumpState,
-            amps,
-            "feed-pump"
-        );
+      MessagePublisher::publishPumpState(
+          mqClient,
+          pumpState,
+          amps,
+          "feed-pump");
 
-        sctLastPumpState = pumpState;
-        sctFirstRun = false;
+      sctLastPumpState = pumpState;
+      sctFirstRun = false;
     }
-}
+  }
 
-
-
-
-
-  if (w1Enabled)
+  if (gConfig.sensors.w1.enabled)
   {
     temptSensor.requestTemperatures();
     TemperatureReading *readings = temptSensor.getTemperatureReadings(); // todo:performance: move declaration outside of the esp loop
@@ -1584,7 +1349,7 @@ if (sctEnabled)
     }
   }
 
-  if (acs712Enabled)
+  if (gConfig.sensors.acs.enabled)
   {
     float amps = fabs(readACS712Current());
     logger.log(amps);

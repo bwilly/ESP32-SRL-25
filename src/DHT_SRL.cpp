@@ -18,6 +18,9 @@ SemaphoreHandle_t xSensorDataMutex;
 float temperature = NAN;
 float humidity = NAN;
 
+static int gDhtPin = -1;  // -1 = unset
+
+
 // Function prototypes [https://chatgpt.com/c/66f37120-74b4-800a-ba48-87c2fc3a22c0]
 void configDHT();
 float roundToHundredth(float number);
@@ -26,19 +29,17 @@ void initSensorTask();
 
 void configDHT()
 {
-    Serial.println("config DHT...");
-    if (pinDht != nullptr)
-    {
-        Serial.println("About to convert pin to int.");
-        int _pinDht = std::stoi(pinDht.c_str()); // @pattern:toInt #1; todo: not sure if this the legacy way to get the vals. i think i have a pattern from the last 6mos that uses paramToVariableMap :bwilly Mar8'25
-        dht = DHT(_pinDht, DHTTYPE); // Reinitialize the DHT object with the correct pin
-        dht.begin();                 // Initialize the DHT sensor
+    logger.log("configDHT...\n");
+    if (gDhtPin < 0) {
+        logger.log("DHT: pin not set; cannot configure\n");
+        return;
     }
-    else
-    {
-        logger.log("Cannot configure DHT because pin not defined.\n");
-    }
+
+    dht = DHT(gDhtPin, DHTTYPE);
+    dht.begin();
+    logger.logf("DHT: configured on pin %d\n", gDhtPin);
 }
+
 
 float roundToHundredth(float number)
 {
@@ -47,7 +48,7 @@ float roundToHundredth(float number)
 
 void sensorTask(void *parameter)
 {
-    if (pinDht == nullptr)
+    if (gDhtPin < 0)
     {
         logger.log("DHT pin not configured in sensorTask!\n");
         vTaskDelete(NULL); // Delete the task if pin is not configured
@@ -96,24 +97,24 @@ void sensorTask(void *parameter)
     }
 }
 
-void initSensorTask()
+void initSensorTask(int dhtPin)
 {
-    // Create the mutex
+    gDhtPin = dhtPin;
+
     xSensorDataMutex = xSemaphoreCreateMutex();
     if (xSensorDataMutex == NULL)
     {
         logger.log("Mutex creation failed!\n");
     }
 
-    // Create the task pinned to core 1
     xTaskCreatePinnedToCore(
-        sensorTask,        // Task function
-        "SensorTask",      // Name of the task
-        4096,              // Stack size in words
-        NULL,              // Task input parameter
-        1,                 // Priority of the task
-        &sensorTaskHandle, // Task handle
-        1                  // Core where the task should run (1 or 0)
+        sensorTask,
+        "SensorTask",
+        4096,
+        NULL,
+        1,
+        &sensorTaskHandle,
+        1
     );
 
     if (sensorTaskHandle == NULL)
@@ -121,6 +122,7 @@ void initSensorTask()
         logger.log("Failed to create sensor task!\n");
     }
 }
+
 
 String floatToStringTwoDecimals(float value)
 {

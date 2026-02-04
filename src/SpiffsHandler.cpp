@@ -5,59 +5,51 @@
 #include <ArduinoJson.h>
 #include <sstream>
 
-String makePath(const char *param)
+std::string makePath(const char *param)
 {
-    return String("/") + param + ".txt";
+    return "/" + std::string(param) + ".txt";
 }
 
-// // For SPIFFS
-// String ssidPath = makePath(PARAM_WIFI_SSID);
-// String passPath = makePath(PARAM_WIFI_PASS);
-// String locationNamePath = makePath(PARAM_LOCATION);
-// String pinDhtPath = makePath(PARAM_PIN_DHT);
-// String mqttServerPath = makePath(PARAM_MQTT_SERVER);
-// String mqttPortPath = makePath(PARAM_MQTT_PORT);
-// String mainDelayPath = makePath(PARAM_MAIN_DELAY);
-// String w1_1Path = makePath(PARAM_W1_1);
-// String w1_2Path = makePath(PARAM_W1_2);
-// String w1_3Path = makePath(PARAM_W1_3);
-// String w1_1_name_Path = makePath(PARAM_W1_1_NAME);
-// String w1_2_name_Path = makePath(PARAM_W1_2_NAME);
-// String w1_3_name_Path = makePath(PARAM_W1_3_NAME);
-// String enableW1Path = makePath(PARAM_ENABLE_W1);
-// String enableDHTPath = makePath(PARAM_ENABLE_DHT);
-// String enableMQTTPath = makePath(PARAM_ENABLE_MQTT);
 
-void loadPersistedValues()
+
+void loadLegacyPersistedValues()
 {
+    Serial.println("AppConfig: loading persisted values from SPIFFS");
+
     for (const auto &param : paramList)
     {
         String value = readFile(SPIFFS, param.spiffsPath.c_str());
 
-        // Assign value to the appropriate global String variable
+        Serial.print("  ");
+        Serial.print(param.name.c_str());
+        Serial.print(" <- ");
+        Serial.print(param.spiffsPath.c_str());
+        Serial.print(" = ");
+
         if (param.type == ParamMetadata::STRING)
         {
-            if (paramToVariableMap.find(param.name) != paramToVariableMap.end())
+            auto it = paramToVariableMap.find(param.name.c_str());
+            if (it != paramToVariableMap.end())
             {
-                *(paramToVariableMap[param.name]) = value;
+                *(it->second) = value.c_str();
+
+                // Print assigned value
+                Serial.println(value.length() ? value : "<empty>");
+            }
+            else
+            {
+                Serial.println("<no target variable>");
             }
         }
-        // // Convert value to a number and assign it to the appropriate global variable
-        // else if (param.type == ParamMetadata::NUMBER) {
-        //     if (paramToIntMap.find(param.name) != paramToIntMap.end()) {
-        //         *(paramToIntMap[param.name]) = value.toInt();
-        //     }
-        // }
-        // Convert value to a boolean and assign it to the appropriate global variable
-        else if (param.type == ParamMetadata::BOOLEAN)
+        else
         {
-            if (paramToBoolMap.find(param.name) != paramToBoolMap.end())
-            {
-                *(paramToBoolMap[param.name]) = (value == "true");
-            }
+            Serial.println("<unsupported type>");
         }
     }
+
+    Serial.println("AppConfig: finished loading persisted values\n");
 }
+
 
 
 void parseHexToArray(const String &value, std::array<uint8_t, 8> intoArray)
