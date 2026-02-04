@@ -7,14 +7,14 @@
 // Copyright 2022-2023, 2024, 2025
 
 // Unstable Wifi post network/wifi failure
-      - plan for fix here is to switch base wifi platform code away from Rui Santos to
+//     - plan for fix here is to switch base wifi platform code away from Rui Santos to
 
 // Only supports DHT22 Sensor [obsolete]]
 
-Immediate need for DSB18b20 Sensor support and multi names for multi sensor. [done]
-I guess that will be accomplished via the hard coded promexporter names.
-Must be configurable.
-With ability to map DSB ID to a name, such as raw water in, post air cooler, post heat exchanger, etc
+// Immediate need for DSB18b20 Sensor support and multi names for multi sensor. [done]
+// I guess that will be accomplished via the hard coded promexporter names.
+// Must be configurable.
+// With ability to map DSB ID to a name, such as raw water in, post air cooler, post heat exchanger, etc
 
 // Configurable:
 // Location as mDNS Name Suffix
@@ -25,14 +25,14 @@ With ability to map DSB ID to a name, such as raw water in, post air cooler, pos
 /** some params can be set via UI. Anything params loaded later as the json web call will supersede UI params [Nov28'25] */
 
 /*********
- *
- * Thanks to
-  Rui Santos
-  Complete instructions at https://RandomNerdTutorials.com/esp32-wi-fi-manager-asyncwebserver/
-
-  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files.
-  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*********/
+// *
+// * Thanks to
+//  Rui Santos
+//  Complete instructions at https://RandomNerdTutorials.com/esp32-wi-fi-manager-asyncwebserver/
+//
+//  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files.
+//  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+// *********/
 
 // todo Nov25'25
 // why is volt-test trying to send dht?
@@ -692,7 +692,7 @@ static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut, cons
   }
 
   // 5) Also update live gConfig (optional but useful for immediate debug endpoints)
-  // gConfig = tmp;
+  // gConfig = tmp; 
 
   return true;
 }
@@ -854,11 +854,21 @@ void setupStationMode()
       configFileStr.c_str(),
       err);
 
-
   if (!configFromJson(jsonString, gConfig))
   {
-    logger.log("Error: configFromJsonFile failed to pull, compare and apply config JSON to gConfig\n");
-  } else {
+    if (!err.empty())
+    {
+      logger.log("Error: configFromJsonFile failed - ");
+      logger.log(err.c_str());
+      logger.log("\n");
+    }
+    else
+    {
+      logger.log("Error: configFromJsonFile failed to pull, compare and apply config JSON to gConfig\n");
+    }
+  }
+  else
+  {
     logger.log("configFromJsonFile succeeded to pull, compare and apply config JSON to gConfig\n");
   }
 

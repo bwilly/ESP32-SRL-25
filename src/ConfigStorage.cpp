@@ -24,6 +24,8 @@ namespace ConfigStorage {
         return configFromJson(root, cfg);
     }
 
+
+    // todo: this is a good helper method such that call doens't have to put togther the plbuming like esp32-wifi-manager does right now feb4'26
     bool saveAppConfigToFile(const char *path, const AppConfig &cfg, JsonDocument &doc)
     {
         doc.clear();

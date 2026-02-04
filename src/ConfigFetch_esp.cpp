@@ -1,10 +1,15 @@
-// ConfigFetch.cpp
+// ConfigFetch_esp.cpp
 #include "ConfigFetch.h"
+#include "IFileStore.h"
 
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-bool downloadConfigJson(const std::string &url, std::string &outJson)
+// Constructor implementation
+ConfigFetch::ConfigFetch(IFileStore& fs) : fs_(fs) {}
+
+// Method implementation (note the ConfigFetch:: scope)
+bool ConfigFetch::downloadConfigJson(const std::string& url, std::string& outJson)
 {
     outJson.clear();  // clear any previous content
 
