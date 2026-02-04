@@ -1,5 +1,14 @@
 
 
+Bootstrap upload to 192.168.4.1 [Feb4'26]
+pwd = /Users/bwilly/PlatformIO/Projects/srlESP32-iot/ESP32-SRL-25/temp/config-module
+cli = curl -i -X POST \
+  -H "Content-Type: application/json" \
+  --data-binary @silviya-bedroom.bootstrap.json \
+  http://192.168.4.1/config/post/bootstrap
+
+
+
 Jan19'26
 ConfigFetch: remote config unchanged vs /config-remote.json; no persist, no reboot
 todo: above log isn't true as I changed the instance values. but the new val did make it to config on device. 
