@@ -3,12 +3,12 @@
 
 namespace ConfigStorage {
 
-    bool loadAppConfigFromFile(const char *path, AppConfig &cfg)
+    AppConfigLoadResult loadAppConfigFromFile(const char *path, AppConfig &cfg)
     {
         File f = SPIFFS.open(path, FILE_READ);
         if (!f) {
             // No file yet
-            return false;
+            return AppConfigLoadResult::NotFoundOrInvalid;
         }
 
         StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> doc;
@@ -17,11 +17,18 @@ namespace ConfigStorage {
 
         if (err) {
             // Parse error
-            return false;
+            return AppConfigLoadResult::NotFoundOrInvalid;
         }
 
         JsonObject root = doc.as<JsonObject>();
-        return configFromJson(root, cfg);
+        const bool isLegacyShape = !root.containsKey("boot");
+        if (!configFromJson(root, cfg)) {
+            return AppConfigLoadResult::NotFoundOrInvalid;
+        }
+
+        return isLegacyShape
+            ? AppConfigLoadResult::LoadedLegacy
+            : AppConfigLoadResult::LoadedCurrent;
     }
 
 

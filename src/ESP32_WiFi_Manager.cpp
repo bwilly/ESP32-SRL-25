@@ -741,10 +741,25 @@ void setupSpiffsAndConfig()
   initSPIFFS();
 
   // 1) Load BOOTSTRAP config first (new source of truth for wifi + identity + base URLs)
-  if (ConfigStorage::loadAppConfigFromFile(FNAME_BOOTSTRAP, gConfig))
+  const ConfigStorage::AppConfigLoadResult bootstrapLoadResult =
+      ConfigStorage::loadAppConfigFromFile(FNAME_BOOTSTRAP, gConfig);
+
+  if (bootstrapLoadResult == ConfigStorage::AppConfigLoadResult::LoadedCurrent)
   {
     // no logger during bootstrap
     Serial.println("s:AppConfig: loaded BOOTSTRAP from /bootstrap.json into gConfig. Since this succeeded, shoudl skip legacy indie spiff files.\n");
+  }
+  else if (bootstrapLoadResult == ConfigStorage::AppConfigLoadResult::LoadedLegacy)
+  {
+    Serial.println("s:AppConfig: loaded legacy JSON shape from /bootstrap.json; persisting upgraded format now.\n");
+    if (ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, gConfig, g_configSaveDoc))
+    {
+      Serial.println("s:AppConfig: persisted upgraded /bootstrap.json format.\n");
+    }
+    else
+    {
+      Serial.println("s:AppConfig: FAILED to persist upgraded /bootstrap.json format.\n");
+    }
   }
   else
   {

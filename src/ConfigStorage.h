@@ -10,9 +10,15 @@
 
 namespace ConfigStorage {
 
+    enum class AppConfigLoadResult {
+        NotFoundOrInvalid = 0,
+        LoadedCurrent,
+        LoadedLegacy
+    };
+
     // Load AppConfig from a JSON file (e.g. "/config.json").
-    // Returns true on success.
-    bool loadAppConfigFromFile(const char *path, AppConfig &cfg);
+    // Returns a tri-state result: missing/invalid, loaded current format, loaded legacy format.
+    AppConfigLoadResult loadAppConfigFromFile(const char *path, AppConfig &cfg);
 
     // Save AppConfig to a JSON file (e.g. "/config.json").
     // Uses provided reusable JsonDocument to avoid stack allocation.
