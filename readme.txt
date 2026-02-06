@@ -72,6 +72,7 @@ Then rebuild.
 
 Git submodule update [Jan13'26]: todo: switch to SSH per ChatGPT
 git -c protocol.file.allow=always submodule update --remote --merge
+ABOVE still seems to require an explicit pull in the submodule dir.
 When I pull from the submodule here, it goes to the source of the lib:
 From /Users/bwilly/local/esp32_local/config-core
    83cb33c..c628e03  main       -> origin/main
