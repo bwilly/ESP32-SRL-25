@@ -11,6 +11,13 @@ cli = curl -i -X POST \
   http://192.168.4.1/config/post/bootstrap
 
 
+Move built executable to web host:
+On Mac
+/Users/bwilly/PlatformIO/Projects/srlESP32-iot/ESP32-SRL-25/.pio/build/nodemcu-32s
+scp firmware.bin bwilly@salt-r420:~
+On host, salt-r420
+cp ~/firmware.bin /home/bwilly/config-repo/esp-config/salt
+
 
 Jan19'26
 ConfigFetch: remote config unchanged vs /config-remote.json; no persist, no reboot

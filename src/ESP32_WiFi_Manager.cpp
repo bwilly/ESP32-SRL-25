@@ -638,7 +638,7 @@ void populateW1Addresses(uint8_t w1Address[6][8], String w1Name[6], const Sensor
   }
 }
 
-static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut, const char *&outWrittenFilename)
+static bool saveUploadedBootstrapConfigJson(const String &jsonBody, String &errOut, const char *&outWrittenFilename)
 {
   // Default it early so caller always gets something predictable.
   outWrittenFilename = FNAME_BOOTSTRAP;
@@ -665,6 +665,7 @@ void setup()
 
   // Enable verbose logging for the WiFi component
   esp_log_level_set("wifi", ESP_LOG_VERBOSE);
+  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
 
   Serial.println("s:initSpiffs...");
   initSPIFFS();
@@ -675,7 +676,7 @@ void setup()
   if (initWiFi()) // Station Mode
   {
     // Start Telnet logger
-    logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
+    logger.startTelnet();
     logger.log("Wifi and Telnet logger shoudl now be functioning.\n");
     setupStationMode();
   }
@@ -890,7 +891,6 @@ void setupAccessPointMode()
   Serial.print("s:AP IP address: ");
   Serial.println(IP);
 
-  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
   logger.log("boot\n");
 
   if (!SPIFFS.begin(true))
@@ -1083,7 +1083,7 @@ void loop()
 
     String err;
     const char *writtenFile = nullptr;
-    bool ok = saveBootstrapConfigJson(g_bootstrapBody, err, writtenFile);
+    bool ok = saveUploadedBootstrapConfigJson(g_bootstrapBody, err, writtenFile);
 
     // also delete the shared/general config file since bootstrap was just updated. eg, start fresh next boot.
     bool dOk = deleteJsonFile(SPIFFS, FNAME_CONFIG);
