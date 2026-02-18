@@ -36,7 +36,7 @@ public:
   uint32_t dropped() const { return _dropped; }
 
 private:
-  static constexpr size_t kMaxMsg = 256;
+  static constexpr size_t kMaxMsg = 512;
 
   bool enqueueCstr(const char* s);
   void cleanup_();

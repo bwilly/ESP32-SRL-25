@@ -665,19 +665,26 @@ void setup()
 
   // Enable verbose logging for the WiFi component
   esp_log_level_set("wifi", ESP_LOG_VERBOSE);
-  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
+  // logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
+  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 512);
 
   Serial.println("s:initSpiffs...");
+  logger.log("setup: initSpiffs...\n");
   initSPIFFS();
   // SPIFFS, legacy params, /config.json, W1 sensors, etc.
+  Serial.println("s:loadBootstrapConfig...");
+  logger.log("setup: loadBootstrapConfig...\n");
   loadBootstrapConfig();
 
+  Serial.println("s:initWiFi...");
+  logger.log("setup: initWiFi...\n");
   // Decide which path: Station vs AP
   if (initWiFi()) // Station Mode
   {
     // Start Telnet logger
     logger.startTelnet();
     logger.log("Wifi and Telnet logger shoudl now be functioning.\n");
+    logger.log("setup: Wifi and Telnet logger shoudl now be functioning...\n");
     setupStationMode();
   }
   else
@@ -691,17 +698,14 @@ void setup()
 
     // logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
     // logger.log("boot\n");
-
+    Serial.println("s:wifi failed. setupAccessPointMode...");
+    logger.log("setup: wifi failed. setupAccessPointMode...\n");
     setupAccessPointMode();
   }
 }
 
 void loadBootstrapConfig()
 {
-
-  // if (ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, gConfig, g_configSaveDoc))
-  // if (ConfigStorage::saveAppConfigToFile(FNAME_CONFIG, gConfig, g_configSaveDoc))
-
   std::string pathSpiffTxt = "/";
 
   SpiffsFileStore fs;
@@ -714,30 +718,28 @@ void loadBootstrapConfig()
   ssid = gConfig.boot.wifi.ssid;
   pass = gConfig.boot.wifi.pass;
   locationName = gConfig.boot.identity.locationName.c_str();
+  // otaUrl legacy string (if still used anywhere)
+  otaUrl = gConfig.boot.remote.otaUrl.c_str();
+  configUrl = gConfig.boot.remote.configBaseUrl;
+  mainDelay = gConfig.timing.mainDelayMs;
+
+  logger.log("gConfig.boot.wifi.ssid=");
+  logger.log(gConfig.boot.wifi.ssid.c_str());
+  logger.log("\n");
+  logger.log("gConfig.boot.wifi.pass=");
+  logger.log(gConfig.boot.wifi.pass.c_str());
+  logger.log("\n");
+  logger.log("gConfig.boot.identity.locationName=");
+  logger.log(gConfig.boot.identity.locationName.c_str());
+  logger.log("\n");
+  logger.log("gConfig.boot.remote.configBaseUrl=");
+  logger.log(gConfig.boot.remote.configBaseUrl.c_str());
+  logger.log("\n");
 
   gIdentity.init(MDNS_DEVICE_NAME, gConfig.boot.identity.locationName.c_str());
 
-  // configUrl in your code is now baseUrl like http://salt-r420:9080/esp-config/salt
-  configUrl = gConfig.boot.remote.configBaseUrl;
-
-  // otaUrl legacy string (if still used anywhere)
-  otaUrl = gConfig.boot.remote.otaUrl.c_str();
-  mainDelay = gConfig.timing.mainDelayMs;
-
-  // 3) Now load the effective runtime cache (mqtt/sensors/pins/etc)
-  // if (loadEffectiveCacheFromFile(EFFECTIVE_CACHE_PATH))
-  // {
-  //   Serial.println("ConfigLoad: EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' loaded and applied (overrides per-param SPIFFS files).");
-  // }
-  // else
-  // {
-  //   Serial.println("ConfigLoad: no EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' (or parse error); continuing with bootstrap-only config.");
-  // }
   Serial.println("s:serial output. assuming logger not yet started.");
-  Serial.println(ssid.c_str());
-  Serial.println(pass.c_str());
-  Serial.println(String(locationName.c_str()));
-  Serial.println(mainDelay);
+  logger.log("gConfig: output. assuming logger not yet started.\n");
 }
 
 void setupStationMode()
@@ -747,7 +749,7 @@ void setupStationMode()
   // tryFetchAndApplyRemoteConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE);
 
   SpiffsFileStore fs;
-  ConfigFetch fetch(fs);
+  ConfigFetch fetch(fs, coreLog);
   ConfigMerge cm(coreLog, fs, fetch);
 
   const std::string mergedRemoteStr = FNAME_CONFIGREMOTE;
@@ -770,6 +772,12 @@ void setupStationMode()
       logger.log("Error: configFromJsonFile failed - ");
       logger.log(err.c_str());
       logger.log("\n");
+      if (!jsonString.empty())
+      {
+        logger.log("The JSON string that failed to parse was:\n");
+        logger.log(jsonString.c_str());
+        logger.log("\n");
+      }
     }
     else
     {
@@ -900,7 +908,7 @@ void setupAccessPointMode()
   // Web Server Root URL
   registerWebRoutesAp(server);
 
-  logger.log("Starting web server...\n");
+  logger.log("Starting web server in AP-mode...\n");
   server.begin();
 }
 
@@ -936,18 +944,20 @@ void publishSimpleMessage()
   {
     if (mqClient.publish(topic, message))
     {
-      Serial.print("s:Message published successfully: ");
-      Serial.println(message);
+      logger.log("MQTT: Message published successfully: ");
+      logger.log(message);
+      logger.log("\n");
     }
     else
     {
-      Serial.println("s:Message publishing failed.");
+      logger.log("MQTT: Message publishing failed.\n");
     }
   }
   else
   {
-    Serial.println("s:Not connected to MQTT broker.");
-    Serial.println(mqClient.state());
+    logger.log("MQTT: Not connected to MQTT broker.");
+    logger.log(mqClient.state());
+    logger.log(" --MQTT: reconnecting...\n");
 
     reconnectMQ();
   }
@@ -1089,7 +1099,9 @@ void loop()
     bool dOk = deleteJsonFile(SPIFFS, FNAME_CONFIG);
     if (!dOk)
     {
-      logger.log("Failed to delete existing config after bootstrap update\n");
+      logger.log("Failed to delete existing config after bootstrap update.\n");
+    } else {
+      logger.log("Deleted existing config to force fresh start on next boot after bootstrap update.\n");
     }
 
     if (ok)
@@ -1149,14 +1161,19 @@ void loop()
   if ((WiFi.status() != WL_CONNECTED) && (current_time - previous_time >= reconnect_delay))
   {
     Serial.print("s:millis: ");
-    Serial.println(millis());
+    logger.log("WiFi:millis: ");
+    Serial.println(millis()); logger.log(String(millis()).c_str()); logger.log("\n");
     Serial.print("s:previous_time: ");
-    Serial.println(previous_time);
+    logger.log("WiFi:previous_time: ");
+    Serial.println(previous_time); logger.log(String(previous_time).c_str()); logger.log("\n");
     Serial.print("s:current_time: ");
-    Serial.println(current_time);
+    logger.log("WiFi:current_time: ");
+    Serial.println(current_time); logger.log(String(current_time).c_str()); logger.log("\n");
     Serial.print("s:reconnect_delay: ");
-    Serial.println(reconnect_delay);
-    Serial.println("s:Reconnecting to WIFI network by restarting to leverage best AP algorithm");
+    logger.log("WiFi:reconnect_delay: ");
+    Serial.println(reconnect_delay); logger.log(String(reconnect_delay).c_str()); logger.log("\n");
+    Serial.println("s:Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm");
+    logger.log("WiFi: Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm\n");
     // WiFi.disconnect();
     // WiFi.reconnect();
     ESP.restart();

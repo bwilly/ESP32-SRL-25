@@ -21,9 +21,14 @@ bool SpiffsFileStore::readText(const char* path, std::string& out) {
   out.resize(size);
 
   if (size > 0) {
-    f.readBytes(&out[0], size);
+    size_t read = f.readBytes(&out[0], size);
+    if (read != size) {
+      f.close();
+      return false;
+    }
   }
 
   f.close();
   return true;
 }
+

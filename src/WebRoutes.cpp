@@ -482,6 +482,9 @@ void registerWebRoutesStation(AsyncWebServer &server)
 
 void registerWebRoutesAp(AsyncWebServer &server)
 {
+    // 0
+    registerStationUiRoutes(server);
+
     // 1) /config/*
     registerConfigRoutesCommon(server);
 
