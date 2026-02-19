@@ -94,7 +94,6 @@
 
 #include "ConfigModel.h"
 #include "ConfigStorage.h"
-#include "ConfigFile.h"
 #include "ConfigMerge.h"
 
 #include "SpiffsFileStore.h"
@@ -102,10 +101,13 @@
 #include "DeviceIdentity.h"
 
 #include "Logger.h"
+#include "EspLoggerAdapter.h"
+#include <ConfigBootstrapper.h>
 
 // #include "ConfigRemoteMerge.h"
 
 Logger logger;
+EspLoggerAdapter coreLog(logger);
 
 // extern AsyncTelnetSerial telnetSerial;
 // static AsyncTelnetSerial telnetSerial(&Serial);
@@ -140,7 +142,7 @@ StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 // String version = String(APP_VERSION) + "::" + APP_COMMIT_HASH + ":: TelnetBridge-removed";
 String version = String(APP_VERSION) + "::" +
                  APP_COMMIT_HASH + "::" +
-                 APP_BUILD_DATE + ":: TelnetBridge-backAgain";
+                 APP_BUILD_DATE + ":: v3: json-module, OTA fixed. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
 
 // trying to identify cause of unreliable dht22 readings
 
@@ -264,7 +266,7 @@ const int ledPin = 2;
 String ledState;
 
 // Forward declarations for setup refactor
-void setupSpiffsAndConfig();
+void loadBootstrapConfig();
 void setupStationMode();
 void setupAccessPointMode();
 
@@ -636,63 +638,19 @@ void populateW1Addresses(uint8_t w1Address[6][8], String w1Name[6], const Sensor
   }
 }
 
-static bool saveBootstrapConfigJson(const String &jsonBody, String &errOut, const char *&outWrittenFilename)
+static bool saveUploadedBootstrapConfigJson(const String &jsonBody, String &errOut, const char *&outWrittenFilename)
 {
   // Default it early so caller always gets something predictable.
   outWrittenFilename = FNAME_BOOTSTRAP;
 
-  // 1) Parse JSON (sanity check)
-  StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> doc;
-  DeserializationError err = deserializeJson(doc, jsonBody);
-  if (err)
-  {
-    errOut = String("JSON parse error: ") + err.c_str();
-    return false;
-  }
+  std::string jsonBodyStdString = std::string(jsonBody.c_str());
 
-  // 2) Apply into a temp AppConfig so we can validate without clobbering gConfig
-  AppConfig tmp = gConfig; // start from current defaults
-  JsonObject root = doc.as<JsonObject>();
-  if (!configFromJson(root, tmp))
-  {
-    errOut = "configFromJson failed";
-    return false;
-  }
-
-  // 3) Minimal bootstrap validation (tweak rules as you like)
-  //    If you want AP bootstrap to ONLY set wifi + identity, keep it strict here.
-  if (tmp.boot.wifi.ssid.empty())
-  {
-    errOut = "Missing required field: wifi.ssid";
-    return false;
-  }
-  if (tmp.boot.wifi.pass.empty())
-  {
-    errOut = "Missing required field: wifi.pass";
-    return false;
-  }
-  if (tmp.boot.identity.locationName.empty())
-  {
-    errOut = "Missing required field: identity.locationName";
-    return false;
-  }
-
-  // Default instance to locationName if omitted
-  if (tmp.boot.identity.instance.empty())
-  {
-    tmp.boot.identity.instance = tmp.boot.identity.locationName;
-  }
-
-  // 4) Persist to /bootstrap.json in modular format
-  // todo: consolidate on this or writeStringToFile
-  if (!ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp, g_configSaveDoc))
+  SpiffsFileStore fs;
+  if (!ConfigStorage::saveBootstrapConfigToFile(FNAME_BOOTSTRAP, jsonBodyStdString, fs, coreLog))
   {
     errOut = "Failed to write /bootstrap.json";
     return false;
   }
-
-  // 5) Also update live gConfig (optional but useful for immediate debug endpoints)
-  // gConfig = tmp; 
 
   return true;
 }
@@ -708,15 +666,27 @@ void setup()
   // Enable verbose logging for the WiFi component
   esp_log_level_set("wifi", ESP_LOG_VERBOSE);
 
-  // SPIFFS, legacy params, /config.json, W1 sensors, etc.
-  setupSpiffsAndConfig();
+  // Experimenting w/ different sizes. want larger to see json not truncated. but something is causing esp to hang. or at least the logger. not sure which yet. Feb18'26
+  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 32, 192);
+  // logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 512);
 
+  Serial.println("s:initSpiffs...");
+  logger.log("setup: initSpiffs...\n");
+  initSPIFFS();
+  // SPIFFS, legacy params, /config.json, W1 sensors, etc.
+  Serial.println("s:loadBootstrapConfig...");
+  logger.log("setup: loadBootstrapConfig...\n");
+  loadBootstrapConfig();
+
+  Serial.println("s:initWiFi...");
+  logger.log("setup: initWiFi...\n");
   // Decide which path: Station vs AP
   if (initWiFi()) // Station Mode
   {
     // Start Telnet logger
-    logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
+    logger.startTelnet();
     logger.log("Wifi and Telnet logger shoudl now be functioning.\n");
+    logger.log("setup: Wifi and Telnet logger shoudl now be functioning...\n");
     setupStationMode();
   }
   else
@@ -730,120 +700,48 @@ void setup()
 
     // logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
     // logger.log("boot\n");
-
+    Serial.println("s:wifi failed. setupAccessPointMode...");
+    logger.log("setup: wifi failed. setupAccessPointMode...\n");
     setupAccessPointMode();
   }
 }
 
-void setupSpiffsAndConfig()
+void loadBootstrapConfig()
 {
-  Serial.println("s:initSpiffs...");
-  initSPIFFS();
+  std::string pathSpiffTxt = "/";
 
-  // 1) Load BOOTSTRAP config first (new source of truth for wifi + identity + base URLs)
-  const ConfigStorage::AppConfigLoadResult bootstrapLoadResult =
-      ConfigStorage::loadAppConfigFromFile(FNAME_BOOTSTRAP, gConfig);
+  SpiffsFileStore fs;
 
-  if (bootstrapLoadResult == ConfigStorage::AppConfigLoadResult::LoadedCurrent)
-  {
-    // no logger during bootstrap
-    Serial.println("s:AppConfig: loaded BOOTSTRAP from /bootstrap.json into gConfig. Since this succeeded, shoudl skip legacy indie spiff files.\n");
-  }
-  else if (bootstrapLoadResult == ConfigStorage::AppConfigLoadResult::LoadedLegacy)
-  {
-    Serial.println("s:AppConfig: loaded legacy JSON shape from /bootstrap.json; persisting upgraded format now.\n");
-    if (ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, gConfig, g_configSaveDoc))
-    {
-      Serial.println("s:AppConfig: persisted upgraded /bootstrap.json format.\n");
-    }
-    else
-    {
-      Serial.println("s:AppConfig: FAILED to persist upgraded /bootstrap.json format.\n");
-    }
-  }
-  else
-  {
-    // no logger during bootstrap
-    Serial.println("s:AppConfig: no /bootstrap.json (or parse error). Will try legacy bootstrap migration next.\n");
-
-    // 1a) Legacy bootstrap migration path (one-time):
-    // loadPersistedValues() reads /ssid.txt /pass.txt /location.txt /config-url.txt /ota-url.txt
-    // We only migrate *bootstrap keys*.
-    loadLegacyPersistedValues();
-
-    // If legacy has at least SSID + PASS + LOCATION, write bootstrap.json
-    // NOTE: This assumes ssid/pass/locationName/configUrl/otaUrl are the legacy globals you already have.
-    if (ssid.length() > 0 && pass.length() > 0 && locationName.length() > 0)
-    {
-      AppConfig tmp = gConfig; // keep defaults
-      tmp.boot.wifi.ssid = std::string(ssid.c_str());
-      tmp.boot.wifi.pass = std::string(pass.c_str());
-
-      tmp.boot.identity.locationName = std::string(locationName.c_str());
-
-      // Default instance to locationName (your rule)
-      if (tmp.boot.identity.instance.empty())
-      {
-        tmp.boot.identity.instance = tmp.boot.identity.locationName;
-      }
-
-      // If you have these in legacy:
-      // configUrl = "http://salt-r420:9080/esp-config/salt"
-      // otaUrl    = "http://.../firmware.bin"
-      if (configUrl.length() > 0)
-      {
-        tmp.boot.remote.configBaseUrl = std::string(configUrl.c_str());
-      }
-      if (otaUrl.length() > 0)
-      {
-        tmp.boot.remote.otaUrl = std::string(otaUrl.c_str());
-      }
-
-      if (ConfigStorage::saveAppConfigToFile(FNAME_BOOTSTRAP, tmp, g_configSaveDoc))
-      {
-        Serial.println("s:AppConfig: migrated legacy bootstrap params -> /bootstrap.json\n");
-        gConfig = tmp;
-      }
-      else
-      {
-        Serial.println("s:AppConfig: FAILED to write /bootstrap.json during legacy migration\n");
-      }
-    }
-    else
-    {
-      Serial.println("s:AppConfig: legacy bootstrap values incomplete; staying unconfigured (AP mode expected)\n");
-    }
-  }
+  ConfigBootstrapper cb(gConfig, FNAME_BOOTSTRAP, FNAME_CONFIG, pathSpiffTxt, fs, coreLog);
+  cb.load();
 
   // 2) Apply bootstrap values into your legacy globals that initWiFi() expects
   // (You can delete these legacy globals later, but for now keep it explicit)
   ssid = gConfig.boot.wifi.ssid;
   pass = gConfig.boot.wifi.pass;
   locationName = gConfig.boot.identity.locationName.c_str();
+  // otaUrl legacy string (if still used anywhere)
+  otaUrl = gConfig.boot.remote.otaUrl.c_str();
+  configUrl = gConfig.boot.remote.configBaseUrl;
+  mainDelay = gConfig.timing.mainDelayMs;
+
+  logger.log("gConfig.boot.wifi.ssid=");
+  logger.log(gConfig.boot.wifi.ssid.c_str());
+  logger.log("\n");
+  logger.log("gConfig.boot.wifi.pass=");
+  logger.log(gConfig.boot.wifi.pass.c_str());
+  logger.log("\n");
+  logger.log("gConfig.boot.identity.locationName=");
+  logger.log(gConfig.boot.identity.locationName.c_str());
+  logger.log("\n");
+  logger.log("gConfig.boot.remote.configBaseUrl=");
+  logger.log(gConfig.boot.remote.configBaseUrl.c_str());
+  logger.log("\n");
 
   gIdentity.init(MDNS_DEVICE_NAME, gConfig.boot.identity.locationName.c_str());
 
-  // configUrl in your code is now baseUrl like http://salt-r420:9080/esp-config/salt
-  configUrl = gConfig.boot.remote.configBaseUrl;
-
-  // otaUrl legacy string (if still used anywhere)
-  otaUrl = gConfig.boot.remote.otaUrl.c_str();
-  mainDelay = gConfig.timing.mainDelayMs;
-
-  // 3) Now load the effective runtime cache (mqtt/sensors/pins/etc)
-  // if (loadEffectiveCacheFromFile(EFFECTIVE_CACHE_PATH))
-  // {
-  //   Serial.println("ConfigLoad: EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' loaded and applied (overrides per-param SPIFFS files).");
-  // }
-  // else
-  // {
-  //   Serial.println("ConfigLoad: no EFFECTIVE_CACHE_PATH = '/config.effective.cache.json' (or parse error); continuing with bootstrap-only config.");
-  // }
   Serial.println("s:serial output. assuming logger not yet started.");
-  Serial.println(ssid.c_str());
-  Serial.println(pass.c_str());
-  Serial.println(String(locationName.c_str()));
-  Serial.println(mainDelay);
+  logger.log("gConfig: output. assuming logger not yet started.\n");
 }
 
 void setupStationMode()
@@ -853,8 +751,11 @@ void setupStationMode()
   // tryFetchAndApplyRemoteConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE);
 
   SpiffsFileStore fs;
-  ConfigFetch fetch(fs);
-  ConfigMerge cm(logger, fs, fetch);
+  ConfigFetch fetch(fs, coreLog);
+  ConfigMerge cm(coreLog, fs, fetch);
+
+  logger.handle();
+  logger.flush(16);
 
   const std::string mergedRemoteStr = FNAME_CONFIGREMOTE;
   const std::string bootstrapStr = FNAME_BOOTSTRAP;
@@ -869,6 +770,9 @@ void setupStationMode()
       configFileStr.c_str(),
       err);
 
+  logger.handle();
+  logger.flush(16);    
+
   if (!configFromJson(jsonString, gConfig))
   {
     if (!err.empty())
@@ -876,6 +780,12 @@ void setupStationMode()
       logger.log("Error: configFromJsonFile failed - ");
       logger.log(err.c_str());
       logger.log("\n");
+      if (!jsonString.empty())
+      {
+        logger.log("The JSON string that failed to parse was:\n");
+        logger.log(jsonString.c_str());
+        logger.log("\n");
+      }
     }
     else
     {
@@ -886,6 +796,9 @@ void setupStationMode()
   {
     logger.log("configFromJsonFile succeeded to pull, compare and apply config JSON to gConfig\n");
   }
+
+  logger.handle();
+  logger.flush(16);
 
   logger.log("initDNS...\n");
   initDNS();
@@ -917,7 +830,7 @@ void setupStationMode()
     sctSensor.begin();
   }
 
-  registerWebRoutesStation(server);
+  registerWebRoutesStation(server, gConfig);
 
   // uses path like server.on("/update")
   // AsyncElegantOTA.begin(&server);
@@ -953,6 +866,9 @@ void setupStationMode()
   }
 
   logger.log("\nEntry setup loop complete.");
+
+  logger.handle();
+  logger.flush(16);
 }
 
 void setupAccessPointMode()
@@ -997,7 +913,6 @@ void setupAccessPointMode()
   Serial.print("s:AP IP address: ");
   Serial.println(IP);
 
-  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
   logger.log("boot\n");
 
   if (!SPIFFS.begin(true))
@@ -1005,9 +920,9 @@ void setupAccessPointMode()
     Serial.println("s:SPIFFS is out of scope per bwilly!");
   }
   // Web Server Root URL
-  registerWebRoutesAp(server);
+  registerWebRoutesAp(server, gConfig);
 
-  logger.log("Starting web server...\n");
+  logger.log("Starting web server in AP-mode...\n");
   server.begin();
 }
 
@@ -1043,18 +958,20 @@ void publishSimpleMessage()
   {
     if (mqClient.publish(topic, message))
     {
-      Serial.print("s:Message published successfully: ");
-      Serial.println(message);
+      logger.log("MQTT: Message published successfully: ");
+      logger.log(message);
+      logger.log("\n");
     }
     else
     {
-      Serial.println("s:Message publishing failed.");
+      logger.log("MQTT: Message publishing failed.\n");
     }
   }
   else
   {
-    Serial.println("s:Not connected to MQTT broker.");
-    Serial.println(mqClient.state());
+    logger.log("MQTT: Not connected to MQTT broker.");
+    logger.log(mqClient.state());
+    logger.log(" --MQTT: reconnecting...\n");
 
     reconnectMQ();
   }
@@ -1183,20 +1100,22 @@ void loop()
   logger.handle();
   logger.flush(16);
 
-  // Apply pending bootstrap config if any
+  // Apply pending bootstrap config if any, delete main config to force fresh start on next boot, and reboot to apply new config
   if (g_bootstrapPending)
   {
     g_bootstrapPending = false;
 
     String err;
     const char *writtenFile = nullptr;
-    bool ok = saveBootstrapConfigJson(g_bootstrapBody, err, writtenFile);
+    bool ok = saveUploadedBootstrapConfigJson(g_bootstrapBody, err, writtenFile);
 
     // also delete the shared/general config file since bootstrap was just updated. eg, start fresh next boot.
     bool dOk = deleteJsonFile(SPIFFS, FNAME_CONFIG);
     if (!dOk)
     {
-      logger.log("Failed to delete existing config after bootstrap update\n");
+      logger.log("Failed to delete existing config after bootstrap update.\n");
+    } else {
+      logger.log("Deleted existing config to force fresh start on next boot after bootstrap update.\n");
     }
 
     if (ok)
@@ -1256,14 +1175,19 @@ void loop()
   if ((WiFi.status() != WL_CONNECTED) && (current_time - previous_time >= reconnect_delay))
   {
     Serial.print("s:millis: ");
-    Serial.println(millis());
+    logger.log("WiFi:millis: ");
+    Serial.println(millis()); logger.log(String(millis()).c_str()); logger.log("\n");
     Serial.print("s:previous_time: ");
-    Serial.println(previous_time);
+    logger.log("WiFi:previous_time: ");
+    Serial.println(previous_time); logger.log(String(previous_time).c_str()); logger.log("\n");
     Serial.print("s:current_time: ");
-    Serial.println(current_time);
+    logger.log("WiFi:current_time: ");
+    Serial.println(current_time); logger.log(String(current_time).c_str()); logger.log("\n");
     Serial.print("s:reconnect_delay: ");
-    Serial.println(reconnect_delay);
-    Serial.println("s:Reconnecting to WIFI network by restarting to leverage best AP algorithm");
+    logger.log("WiFi:reconnect_delay: ");
+    Serial.println(reconnect_delay); logger.log(String(reconnect_delay).c_str()); logger.log("\n");
+    Serial.println("s:Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm");
+    logger.log("WiFi: Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm\n");
     // WiFi.disconnect();
     // WiFi.reconnect();
     ESP.restart();

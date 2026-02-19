@@ -304,24 +304,17 @@ static void registerDeviceRoutes(AsyncWebServer &server)
 // /ota/* endpoints
 // -------------------------
 
-static void registerOtaRoutes(AsyncWebServer &server)
+static void registerOtaRoutes(AsyncWebServer &server, AppConfig &cfg)
 {
-    server.on("/ota/run", HTTP_GET, [](AsyncWebServerRequest *request) {
-
-        auto it = paramToVariableMap.find("ota-url");
-        if (it == paramToVariableMap.end() || it->second == nullptr) {
-            request->send(400, "text/plain", "Missing or null 'ota-url' param in config");
-            return;
-        }
-
-        std::string fwUrl = *(it->second);
+    server.on("/ota/run", HTTP_GET, [&cfg](AsyncWebServerRequest *request) {
+        std::string fwUrl = cfg.boot.remote.otaUrl;
         
         // Trim whitespace from both ends
         fwUrl.erase(0, fwUrl.find_first_not_of(" \t\n\r"));
         fwUrl.erase(fwUrl.find_last_not_of(" \t\n\r") + 1);
 
         if (fwUrl.empty()) {
-            request->send(400, "text/plain", "Empty 'ota-url' value in config");
+            request->send(400, "text/plain", "Missing or empty ota URL (gConfig.boot.remote.otaUrl)");
             return;
         }
 
@@ -333,7 +326,7 @@ static void registerOtaRoutes(AsyncWebServer &server)
         g_otaUrl = String(fwUrl.c_str());
         g_otaRequested = true;
 
-        std::string response = "OTA scheduled from " + fwUrl + "\nDevice will reboot if update succeeds.";
+        std::string response = "OTA scheduled from " + fwUrl + "\nDevice will reboot if update succeeds. \n";
         request->send(200, "text/plain", response.c_str());
     });
 }
@@ -464,7 +457,7 @@ static void registerApUiRoutes(AsyncWebServer &server)
 
 // ---- Public API ----
 
-void registerWebRoutesStation(AsyncWebServer &server)
+void registerWebRoutesStation(AsyncWebServer &server, AppConfig &cfg)
 {
     // Keep groupings stable and obvious:
     // 1) UI / metrics routes
@@ -477,11 +470,15 @@ void registerWebRoutesStation(AsyncWebServer &server)
     registerDeviceRoutes(server);
 
     // 4) /ota/*
-    registerOtaRoutes(server);
+    registerOtaRoutes(server, cfg);
 }
 
-void registerWebRoutesAp(AsyncWebServer &server)
+void registerWebRoutesAp(AsyncWebServer &server, AppConfig &cfg)
 {
+    (void)cfg;
+    // 0
+    registerStationUiRoutes(server);
+
     // 1) /config/*
     registerConfigRoutesCommon(server);
 

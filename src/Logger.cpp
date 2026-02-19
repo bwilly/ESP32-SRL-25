@@ -2,69 +2,133 @@
 #include <stdarg.h>
 #include <string.h>
 
+#if defined(ARDUINO)
+  #include <WiFi.h>
+#endif
+
+void Logger::cleanup_() {
+  if (_q) {
+    vQueueDelete(_q);
+    _q = nullptr;
+  }
+  if (_drainBuf) {
+    free(_drainBuf);
+    _drainBuf = nullptr;
+  }
+  _msgSize = 0;
+  _serialReady = false;
+  _telnetConfigured = false;
+  _telnetStarted = false;
+}
+
+void Logger::end() {
+  cleanup_();
+}
+
+bool Logger::wifiReady_() const {
+#if defined(ARDUINO)
+  return WiFi.status() == WL_CONNECTED;
+#else
+  return false;
+#endif
+}
+
 bool Logger::begin(const char* hostname,
                    const char* password,
                    uint16_t port,
                    size_t queueLen,
                    size_t msgSize)
 {
+  // If begin called twice, cleanly reset.
+  cleanup_();
+
+  if (!hostname) hostname = "esp";
+  if (!password) password = "";
+
+  // Hard cap msg size to avoid stack blowups + keep behavior consistent
+  if (msgSize == 0) msgSize = kMaxMsg;
+  if (msgSize > kMaxMsg) msgSize = kMaxMsg;
   _msgSize = msgSize;
 
-  // Create a queue of fixed-size message slots.
-  // Each item is msgSize bytes (a null-terminated C string).
   _q = xQueueCreate(queueLen, _msgSize);
-  if (!_q) return false;
+  if (!_q) { cleanup_(); return false; }
 
   _drainBuf = (char*)malloc(_msgSize);
-  if (!_drainBuf) return false;
+  if (!_drainBuf) { cleanup_(); return false; }
 
-  _dbg.begin(hostname);
-  _dbg.setSerialEnabled(true);          // keep USB serial mirrored
-  _dbg.setPassword(String(password));   // plaintext, but fine on trusted LAN
+  _serialReady = true;
 
-  // Port: API differs between forks.
-  // If your library doesn't have setPort(), comment it out.
-  // _dbg.setPort(port);
+  // Store telnet config; do NOT require WiFi here.
+  _hostname = hostname;
+  _password = password;
+  _port = port;
+  _telnetConfigured = true;
+  _telnetStarted = false;
 
-  // Small banner
-  enqueueCstr("RemoteDebug2 logger ready\n");
+  enqueueCstr("Serial logger ready (telnet pending)\n");
+  return true; // important: Serial fallback is now “ready”
+}
+
+bool Logger::tryStartTelnet_() {
+  if (!_telnetConfigured || _telnetStarted) return _telnetStarted;
+  if (!wifiReady_()) return false;
+
+  // Now it’s safe/useful to start RemoteDebug
+  _dbg.begin(_hostname.c_str());
+  _dbg.setPassword(_password);
+  _dbg.setSerialEnabled(true); // mirror to USB serial too (optional)
+
+  // Port: API differs between forks; enable if your fork supports it
+  // _dbg.setPort(_port);
+
+  _telnetStarted = true;
+  enqueueCstr("Telnet logger started\n");
   return true;
 }
 
+bool Logger::startTelnet() {
+  return tryStartTelnet_();
+}
+
 void Logger::handle() {
-  // Must be called from loop (single owner thread)
-  _dbg.handle();
+  // auto-start telnet when WiFi becomes ready
+  tryStartTelnet_();
+
+  if (_telnetStarted) {
+    _dbg.handle();
+  }
 }
 
 void Logger::flush(size_t maxDrain) {
-  if (!_q) return;
+  if (!_q || !_drainBuf) return;
+
+  // auto-start telnet when WiFi becomes ready
+  tryStartTelnet_();
 
   for (size_t i = 0; i < maxDrain; i++) {
-    // Non-blocking: only drains what's available right now
     if (xQueueReceive(_q, _drainBuf, 0) != pdTRUE) break;
 
-    // All actual telnet/serial output happens here (loop thread only)
-    _dbg.print(_drainBuf);
-  }
+    // Paranoia: ensure termination even if caller sent a full slot
+    _drainBuf[_msgSize - 1] = '\0';
 
-  // Optional: occasionally report drops (also from loop thread)
-  // If you want, we can add a throttled “dropped=N” line.
+    if (_telnetStarted) {
+      _dbg.print(_drainBuf);
+    } else if (_serialReady) {
+      Serial.print(_drainBuf);
+    }
+  }
 }
 
 bool Logger::enqueueCstr(const char* s) {
   if (!_q || !s) return false;
 
-  // Copy into a fixed-size slot (stack buffer -> queue item)
-  // Keep this small to avoid stack blow-ups.
-  // If msgSize is large, consider making this static or reduce msgSize.
-  char tmp[256];
+  char tmp[kMaxMsg];
 
-  // If msgSize > 256, we cap to 256 here. Keep msgSize <= 256 in begin().
-  size_t cap = (_msgSize <= sizeof(tmp)) ? _msgSize : sizeof(tmp);
+  // Copy at most _msgSize-1, always terminate
+  const size_t cap = (_msgSize <= kMaxMsg) ? _msgSize : kMaxMsg;
   strncpy(tmp, s, cap - 1);
   tmp[cap - 1] = '\0';
 
-  // Non-blocking send: if queue is full, drop the message
   if (xQueueSend(_q, tmp, 0) != pdTRUE) {
     _dropped++;
     return false;
@@ -89,7 +153,6 @@ void Logger::log(unsigned long val) {
 
 void Logger::log(float val, uint8_t decimals) {
   char b[48];
-  // Arduino printf float support varies; dtostrf is safer:
   char f[32];
   dtostrf(val, 0, decimals, f);
   snprintf(b, sizeof(b), "%s", f);
@@ -97,7 +160,7 @@ void Logger::log(float val, uint8_t decimals) {
 }
 
 void Logger::logf(const char* fmt, ...) {
-  char b[256]; // cap formatted line size; keep <= msgSize
+  char b[kMaxMsg];
   va_list ap;
   va_start(ap, fmt);
   vsnprintf(b, sizeof(b), fmt, ap);
