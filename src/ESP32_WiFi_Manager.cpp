@@ -142,7 +142,7 @@ StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 // String version = String(APP_VERSION) + "::" + APP_COMMIT_HASH + ":: TelnetBridge-removed";
 String version = String(APP_VERSION) + "::" +
                  APP_COMMIT_HASH + "::" +
-                 APP_BUILD_DATE + ":: json-module";
+                 APP_BUILD_DATE + ":: v3: json-module, OTA fixed. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
 
 // trying to identify cause of unreliable dht22 readings
 
@@ -665,8 +665,10 @@ void setup()
 
   // Enable verbose logging for the WiFi component
   esp_log_level_set("wifi", ESP_LOG_VERBOSE);
-  // logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 192);
-  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 512);
+
+  // Experimenting w/ different sizes. want larger to see json not truncated. but something is causing esp to hang. or at least the logger. not sure which yet. Feb18'26
+  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 32, 192);
+  // logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 512);
 
   Serial.println("s:initSpiffs...");
   logger.log("setup: initSpiffs...\n");
@@ -752,6 +754,9 @@ void setupStationMode()
   ConfigFetch fetch(fs, coreLog);
   ConfigMerge cm(coreLog, fs, fetch);
 
+  logger.handle();
+  logger.flush(16);
+
   const std::string mergedRemoteStr = FNAME_CONFIGREMOTE;
   const std::string bootstrapStr = FNAME_BOOTSTRAP;
   const std::string configFileStr = FNAME_CONFIG;
@@ -764,6 +769,9 @@ void setupStationMode()
       bootstrapStr.c_str(),
       configFileStr.c_str(),
       err);
+
+  logger.handle();
+  logger.flush(16);    
 
   if (!configFromJson(jsonString, gConfig))
   {
@@ -788,6 +796,9 @@ void setupStationMode()
   {
     logger.log("configFromJsonFile succeeded to pull, compare and apply config JSON to gConfig\n");
   }
+
+  logger.handle();
+  logger.flush(16);
 
   logger.log("initDNS...\n");
   initDNS();
@@ -819,7 +830,7 @@ void setupStationMode()
     sctSensor.begin();
   }
 
-  registerWebRoutesStation(server);
+  registerWebRoutesStation(server, gConfig);
 
   // uses path like server.on("/update")
   // AsyncElegantOTA.begin(&server);
@@ -855,6 +866,9 @@ void setupStationMode()
   }
 
   logger.log("\nEntry setup loop complete.");
+
+  logger.handle();
+  logger.flush(16);
 }
 
 void setupAccessPointMode()
@@ -906,7 +920,7 @@ void setupAccessPointMode()
     Serial.println("s:SPIFFS is out of scope per bwilly!");
   }
   // Web Server Root URL
-  registerWebRoutesAp(server);
+  registerWebRoutesAp(server, gConfig);
 
   logger.log("Starting web server in AP-mode...\n");
   server.begin();

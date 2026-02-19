@@ -36,7 +36,10 @@ public:
   uint32_t dropped() const { return _dropped; }
 
 private:
-  static constexpr size_t kMaxMsg = 512;
+
+  // Experimenting w/ different sizes. want larger to see json not truncated. but something is causing esp to hang. or at least the logger. not sure which yet. Feb18'26
+  static constexpr size_t kMaxMsg = 256;
+  // static constexpr size_t kMaxMsg = 512;
 
   bool enqueueCstr(const char* s);
   void cleanup_();
