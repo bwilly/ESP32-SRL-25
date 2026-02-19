@@ -142,7 +142,7 @@ StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 // String version = String(APP_VERSION) + "::" + APP_COMMIT_HASH + ":: TelnetBridge-removed";
 String version = String(APP_VERSION) + "::" +
                  APP_COMMIT_HASH + "::" +
-                 APP_BUILD_DATE + ":: v3: json-module, OTA fixed. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
+                 APP_BUILD_DATE + ":: v3: json-module, OTA fixed, w1. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
 
 // trying to identify cause of unreliable dht22 readings
 
@@ -1276,7 +1276,7 @@ void loop()
   if (gConfig.sensors.w1.enabled)
   {
     temptSensor.requestTemperatures();
-    TemperatureReading *readings = temptSensor.getTemperatureReadings(); // todo:performance: move declaration outside of the esp loop
+    TemperatureReading *readings = temptSensor.getTemperatureReadings(gConfig.sensors.w1); // todo:performance: move declaration outside of the esp loop
 
     for (int i = 0; i < MAX_READINGS; i++)
     {

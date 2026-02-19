@@ -411,14 +411,14 @@ static void registerStationUiRoutes(AsyncWebServer &server)
     // todo: find out why some readings provide 129 now, and on prev commit, they returned -127 for same bad reading. Now, the method below return -127, but this one is now 129. Odd. Aug19 '23
     server.on("/onewiretempt", HTTP_GET, [](AsyncWebServerRequest *request) {
         temptSensor.requestTemperatures();
-        TemperatureReading *readings = temptSensor.getTemperatureReadings();
+        TemperatureReading *readings = temptSensor.getTemperatureReadings(gConfig.sensors.w1);
         request->send(200, "text/html", SendHTML(readings, MAX_READINGS));
     });
 
     // todo: find out why some readings provide -127
     server.on("/onewiremetrics", HTTP_GET, [](AsyncWebServerRequest *request) {
         temptSensor.requestTemperatures();
-        TemperatureReading *readings = temptSensor.getTemperatureReadings();
+        TemperatureReading *readings = temptSensor.getTemperatureReadings(gConfig.sensors.w1);
         request->send(200, "text/html", buildPrometheusMultiTemptExport(readings));
     });
 
