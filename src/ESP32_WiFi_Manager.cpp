@@ -819,7 +819,8 @@ void setupStationMode()
   }
 
   // I2C pins for CHT832x
-  Wire.begin(32, 33); // todo:externalize: why is this here instead of inside the instantiation of the CHT sensor? Dec6'25
+  Wire.begin(gConfig.sensors.cht.pinSda, gConfig.sensors.cht.pinScl);
+  envSensor.setAddress(static_cast<uint8_t>(gConfig.sensors.cht.addr));
   if (gConfig.sensors.cht.enabled)
   {
     envSensor.begin();

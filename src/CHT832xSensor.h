@@ -27,6 +27,7 @@ public:
 
     // Optionally supply an alternate I2C bus; defaults to &Wire
     void begin(TwoWire *wire = &Wire);
+    void setAddress(uint8_t i2cAddress);
 
     // Read temperature (°C) and humidity (%RH).
     // Returns true on success.

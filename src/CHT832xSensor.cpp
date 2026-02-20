@@ -25,6 +25,11 @@ void CHT832xSensor::begin(TwoWire *wire)
     logger.logf("CHT832xSensor: begin() on addr 0x%02X\n", _addr);
 }
 
+void CHT832xSensor::setAddress(uint8_t i2cAddress)
+{
+    _addr = i2cAddress;
+}
+
 // Polynomial 0x31, init 0xFF (Sensirion CRC-8)
 uint8_t CHT832xSensor::computeCrc(const uint8_t *data, size_t len) const
 {
