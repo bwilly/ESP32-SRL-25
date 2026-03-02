@@ -142,7 +142,7 @@ StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 // String version = String(APP_VERSION) + "::" + APP_COMMIT_HASH + ":: TelnetBridge-removed";
 String version = String(APP_VERSION) + "::" +
                  APP_COMMIT_HASH + "::" +
-                 APP_BUILD_DATE + ":: v3: json-module, OTA fixed, w1. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
+                 APP_BUILD_DATE + ":: v3: json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
 
 // trying to identify cause of unreliable dht22 readings
 
@@ -161,8 +161,6 @@ WiFiMulti wifiMulti;
 IPAddress primaryDNS(10, 27, 1, 30); // Your Raspberry Pi's IP (DNS server) mar'25: why is this here? is it doing anything
 IPAddress secondaryDNS(8, 8, 8, 8);  // Optional: Google DNS
 
-const float THRESHOLD_TEMPERATURE_PERCENTAGE = 3.0;
-const float THRESHOLD_HUMIDITY_PERCENTAGE = 4.0;
 const unsigned long PUBLISH_INTERVAL = 5 * 60 * 1000; // Five minutes in milliseconds
 
 float previousTemperature = NAN;
@@ -175,12 +173,6 @@ float previousCHTTemperature = NAN;
 float previousCHTHumidity = NAN;
 unsigned long lastPublishTime_temptCHT = 0;
 unsigned long lastPublishTime_humidityCHT = 0;
-
-// Local pump config (Nov 25, 2025)
-namespace
-{
-  constexpr float PUMP_ON_THRESHOLD_AMPS = 1.75f; // was hardcoded in loop
-}
 
 // Globals to store the last published values
 // float lastPublishedTemperature = NAN;
@@ -1008,11 +1000,11 @@ void maybePublishEnvToMqtt(
   bool shouldPublishTemp = false;
   bool shouldPublishHum = false;
 
-  if (tempChange >= THRESHOLD_TEMPERATURE_PERCENTAGE)
+  if (tempChange >= gConfig.sensors.publishThreshold.temperatureChangePct)
   {
     shouldPublishTemp = true;
   }
-  if (humidityChange >= THRESHOLD_HUMIDITY_PERCENTAGE)
+  if (humidityChange >= gConfig.sensors.publishThreshold.humidityChangePct)
   {
     shouldPublishHum = true;
   }
@@ -1295,7 +1287,7 @@ void loop()
     logger.log(amps);
     logger.log(" amps\n");
 
-    bool pumpState = (amps > PUMP_ON_THRESHOLD_AMPS);
+    bool pumpState = (amps > gConfig.sensors.acs.onThresholdAmps);
 
     if (pumpState)
     {
