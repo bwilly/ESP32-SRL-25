@@ -193,18 +193,11 @@ unsigned long lastPublishTime_humidityCHT = 0;
 // // CHT832x I2C temperature/humidity sensor (full OO)
 // CHT832xSensor envSensor(0x44); // default address; todo: externalize Dec3'25
 
-// SctSensor sctSensor(32, 15.0f);  // default 15A;
-// choose the ADC1 pin you're using (example)
-static const int PIN_SCT = 32;
-// choose the rating (10, 15, or 20A version)
-static const float SCT_RATED_AMPS = 15.0f;
-static const float FEEDPUMP_ON_THRESHOLD_AMPS = 0.5f;
-
 // SCT pump state tracking
 static bool sctFirstRun = true;
 static bool sctLastPumpState = false;
-// your OO instance (just like envSensor)
-SctSensor sctSensor(PIN_SCT, SCT_RATED_AMPS);
+// Defaults align with ConfigModel::Sct013Config defaults and will be overwritten from gConfig in setup().
+SctSensor sctSensor(32, 15.0f);
 
 // DS18b20
 // Data wire is plugged into port 15 on the ESP32
@@ -820,6 +813,7 @@ void setupStationMode()
 
   if (gConfig.sensors.sct.enabled)
   {
+    sctSensor = SctSensor(gConfig.sensors.sct.pin, gConfig.sensors.sct.ratedAmps);
     sctSensor.begin();
   }
 
@@ -1273,7 +1267,7 @@ void loop()
     {
       float amps = sctSensor.readCurrentACRms();
       logger.logf("iot.sct.current %.3fA pin=%d rated=%.0f\n",
-                  amps, PIN_SCT, SCT_RATED_AMPS);
+                  amps, gConfig.sensors.sct.pin, gConfig.sensors.sct.ratedAmps);
       sctSensor.serialOutAdcDebug(); // for debug only
     }
   }
@@ -1286,7 +1280,7 @@ void loop()
             ? String(locationName.c_str())
             : String(gConfig.sensors.sct.name.c_str());
 
-    bool pumpState = (amps > FEEDPUMP_ON_THRESHOLD_AMPS);
+    bool pumpState = (amps > gConfig.sensors.sct.onThresholdAmps);
 
     if (sctFirstRun || pumpState != sctLastPumpState || pumpState)
     {
