@@ -1281,6 +1281,10 @@ void loop()
   if (gConfig.sensors.sct.enabled)
   {
     float amps = fabsf(sctSensor.readCurrentACRms());
+    const String sctPublishName =
+        gConfig.sensors.sct.name.empty()
+            ? String(locationName.c_str())
+            : String(gConfig.sensors.sct.name.c_str());
 
     bool pumpState = (amps > FEEDPUMP_ON_THRESHOLD_AMPS);
 
@@ -1290,7 +1294,7 @@ void loop()
           mqClient,
           pumpState,
           amps,
-          "feed-pump");
+          sctPublishName);
 
       sctLastPumpState = pumpState;
       sctFirstRun = false;
@@ -1315,6 +1319,10 @@ void loop()
   if (gConfig.sensors.acs.enabled)
   {
     float amps = fabs(readACS712Current());
+    const String acsPublishName =
+        gConfig.sensors.acs.name.empty()
+            ? String(locationName.c_str())
+            : String(gConfig.sensors.acs.name.c_str());
     logger.log(amps);
     logger.log(" amps\n");
 
@@ -1332,7 +1340,7 @@ void loop()
     if (firstRun || pumpState != lastPumpState || pumpState)
     {
       // Only publish if the pump state changed ...i don't like hiding the visibility of being OFF, but too much data
-      MessagePublisher::publishPumpState(mqClient, pumpState, amps, "engineRoomPump");
+      MessagePublisher::publishPumpState(mqClient, pumpState, amps, acsPublishName);
       lastPumpState = pumpState; // Update the last known state
       firstRun = false;
     }
