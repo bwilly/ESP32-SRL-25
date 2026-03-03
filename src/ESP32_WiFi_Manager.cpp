@@ -763,7 +763,7 @@ void setupStationMode()
       err);
 
   logger.handle();
-  logger.flush(16);    
+  logger.flush(16);
 
   if (!configFromJson(jsonString, gConfig))
   {
@@ -1086,9 +1086,21 @@ void maybePublishEnvToMqtt(
   logger.log("\n");
 }
 
+unsigned long g_lastMainRunMs = 0;
+const unsigned long MAIN_INTERVAL_MS = gConfig.timing.mainDelayMs < 500 ? 3000 : gConfig.timing.mainDelayMs;
+
+
 void loop()
 {
   unsigned long currentMillis = millis();
+
+  if(currentMillis - g_lastMainRunMs < MAIN_INTERVAL_MS)
+  {
+    // Not time to run main loop logic yet
+    return;
+  }
+  g_lastMainRunMs = currentMillis;
+
 
   logger.handle();
   logger.flush(16);
@@ -1107,7 +1119,9 @@ void loop()
     if (!dOk)
     {
       logger.log("Failed to delete existing config after bootstrap update.\n");
-    } else {
+    }
+    else
+    {
       logger.log("Deleted existing config to force fresh start on next boot after bootstrap update.\n");
     }
 
@@ -1169,16 +1183,24 @@ void loop()
   {
     Serial.print("s:millis: ");
     logger.log("WiFi:millis: ");
-    Serial.println(millis()); logger.log(String(millis()).c_str()); logger.log("\n");
+    Serial.println(millis());
+    logger.log(String(millis()).c_str());
+    logger.log("\n");
     Serial.print("s:previous_time: ");
     logger.log("WiFi:previous_time: ");
-    Serial.println(previous_time); logger.log(String(previous_time).c_str()); logger.log("\n");
+    Serial.println(previous_time);
+    logger.log(String(previous_time).c_str());
+    logger.log("\n");
     Serial.print("s:current_time: ");
     logger.log("WiFi:current_time: ");
-    Serial.println(current_time); logger.log(String(current_time).c_str()); logger.log("\n");
+    Serial.println(current_time);
+    logger.log(String(current_time).c_str());
+    logger.log("\n");
     Serial.print("s:reconnect_delay: ");
     logger.log("WiFi:reconnect_delay: ");
-    Serial.println(reconnect_delay); logger.log(String(reconnect_delay).c_str()); logger.log("\n");
+    Serial.println(reconnect_delay);
+    logger.log(String(reconnect_delay).c_str());
+    logger.log("\n");
     Serial.println("s:Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm");
     logger.log("WiFi: Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm\n");
     // WiFi.disconnect();
@@ -1304,24 +1326,4 @@ void loop()
       firstRun = false;
     }
   }
-
-  logger.log("loop finished. sleep/delay...\n");
-  // logger.flushTelnet();
-  //  TelnetStream.println("loop finished. sleep/delay...");
-
-  // (1) Read-and-parse the configured delay (in ms)
-  int requestedDelay = mainDelay.toInt();
-
-  // (2) Enforce a minimum of 500 ms—if below, log + bump up to 3000 ms
-  int actualDelay = requestedDelay < 500
-                        ? 3000
-                        : requestedDelay;
-  if (requestedDelay < 500)
-  {
-    logger.logf(
-        "Requested delay (%d ms) < 500 ms; overriding to %d ms\n",
-        requestedDelay, actualDelay);
-  }
-
-  delay(actualDelay); // Wait for 5 seconds before next loop
 }
