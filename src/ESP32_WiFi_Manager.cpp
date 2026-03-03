@@ -982,6 +982,7 @@ float calculatePercentageChange(float oldValue, float newValue)
 
 void maybePublishEnvToMqtt(
     const char *sourceName,
+    const String &publishBaseName,
     float currentTemperature,
     float currentHumidity,
     float &previousTemperatureRef,
@@ -1059,7 +1060,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishTemperature...\n");
-    MessagePublisher::publishTemperature(mqClient, currentTemperature, String(locationName.c_str()));
+    MessagePublisher::publishTemperature(mqClient, currentTemperature, publishBaseName);
     previousTemperatureRef = currentTemperature;
     lastPublishTimeTempRef = now;
   }
@@ -1073,7 +1074,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishHumidity...\n");
-    MessagePublisher::publishHumidity(mqClient, currentHumidity, String(locationName.c_str()));
+    MessagePublisher::publishHumidity(mqClient, currentHumidity, publishBaseName);
     previousHumidityRef = currentHumidity;
     lastPublishTimeHumRef = now;
   }
@@ -1224,9 +1225,14 @@ void loop()
     {
       float currentTemperature = readDHTTemperature();
       float currentHumidity = readDHTHumidity();
+      const String dhtPublishName =
+          gConfig.sensors.dht.name.empty()
+              ? String(locationName.c_str())
+              : String(gConfig.sensors.dht.name.c_str());
 
       maybePublishEnvToMqtt(
           "DHT",
+          dhtPublishName,
           currentTemperature,
           currentHumidity,
           previousTemperature,
@@ -1240,11 +1246,16 @@ void loop()
     {
       float chtTemp = NAN;
       float chtHum = NAN;
+      const String chtPublishName =
+          gConfig.sensors.cht.name.empty()
+              ? String(locationName.c_str())
+              : String(gConfig.sensors.cht.name.c_str());
 
       if (envSensor.read(chtTemp, chtHum))
       {
         maybePublishEnvToMqtt(
             "CHT832x",
+            chtPublishName,
             chtTemp,
             chtHum,
             previousCHTTemperature,
