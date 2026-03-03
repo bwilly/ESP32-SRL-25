@@ -1189,8 +1189,6 @@ void loop()
 
   if (gConfig.mqtt.enabled)
   {
-
-    reconnectMQ();
     // publishSimpleMessage(); // manual test
 
     if (!mqClient.connected())
