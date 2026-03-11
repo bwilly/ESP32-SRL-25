@@ -7,13 +7,15 @@
 // #include <BufferedLogger.h>
 #include <shared_vars.h>
 
-// v4 topic example: srl/site/Natasha/metric/propulsion/gear/temperature
+// v4 topic example: srl/site/natasha/metric/propulsion/gear/temperature
+// v4 topic example: srl/site/salt/metric/climate/room/temperature
 // srl/site/natasha will be set for now in telegraf config
 
 namespace {
-    constexpr char TEMPERATURE_TOPIC[] = "metric/temperature";
-    constexpr char HUMIDITY_TOPIC[] = "metric/humidity";
-    constexpr char PUMP_STATE_TOPIC[] = "metric/pump";
+    constexpr char METRIC_TOPIC[] = "metric";
+    constexpr char TEMPERATURE_TOPIC[] = "temperature";
+    constexpr char HUMIDITY_TOPIC[] = "humidity";
+    constexpr char PUMP_STATE_TOPIC[] = "pump";
 
     const char *baseNameFor(const SensorMetadata &metadata, const String &defaultBaseName) {
         return metadata.asset.empty() ? defaultBaseName.c_str() : metadata.asset.c_str();
@@ -29,6 +31,9 @@ namespace {
         if (!metadata.group.empty()) {
             doc["g"] = metadata.group.c_str();
         }
+        if (!metadata.system.empty()) {
+            doc["s"] = metadata.system.c_str();
+        }
         if (!metadata.canonicalSystem.empty()) {
             doc["cs"] = metadata.canonicalSystem.c_str();
         }
@@ -38,10 +43,26 @@ namespace {
     }
 }
 
+String MessagePublisher::buildTopic(const SensorMetadata &metadata, const char *topicSuffix) {
+    const std::string &systemName =
+        metadata.canonicalSystem.empty() ? metadata.system : metadata.canonicalSystem;
+
+    String topic(METRIC_TOPIC);
+    topic += "/";
+    topic += systemName.c_str();
+    topic += "/";
+    topic += metadata.assetType.c_str();
+    topic += "/";
+    topic += topicSuffix;
+
+    return topic;
+}
+
 // baseName (bn) is the esp device name, independent of sensors it may manage. also referred to as "locationName" 
 void MessagePublisher::publishTemperature(PubSubClient &client, float temperature, const SensorMetadata &metadata, const String &defaultBaseName) {
     const size_t capacity = JSON_OBJECT_SIZE(16);
     DynamicJsonDocument doc(capacity);
+    const String topic = buildTopic(metadata, TEMPERATURE_TOPIC);
 
     doc["bn"] = baseNameFor(metadata, defaultBaseName);
     doc["n"] = "temperature";
@@ -61,7 +82,7 @@ void MessagePublisher::publishTemperature(PubSubClient &client, float temperatur
   
     }
 
-    bool ok = client.publish(TEMPERATURE_TOPIC, buffer);
+    bool ok = client.publish(topic.c_str(), buffer);
     if (ok) {
         logger.log("Msg pub ok \n");
     } else {
@@ -72,6 +93,7 @@ void MessagePublisher::publishTemperature(PubSubClient &client, float temperatur
 void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, const SensorMetadata &metadata, const String &defaultBaseName) {
     const size_t capacity = JSON_OBJECT_SIZE(16);
     DynamicJsonDocument doc(capacity);
+    const String topic = buildTopic(metadata, HUMIDITY_TOPIC);
 
     doc["bn"] = baseNameFor(metadata, defaultBaseName);
     doc["n"]  = "humidity";
@@ -91,7 +113,7 @@ void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, con
         // you might want to return here, but I’ll leave behavior same as temp()
     }
 
-    bool ok = client.publish(HUMIDITY_TOPIC, buffer);
+    bool ok = client.publish(topic.c_str(), buffer);
     if (ok) {
         logger.log("Humidity msg pub ok \n");
     } else {
@@ -122,6 +144,7 @@ void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, con
 void MessagePublisher::publishPumpState(PubSubClient &client, bool isOn, float amps, const SensorMetadata &metadata, const String &defaultBaseName) {
     const size_t capacity = JSON_OBJECT_SIZE(18);
     DynamicJsonDocument doc(capacity);
+    const String topic = buildTopic(metadata, PUMP_STATE_TOPIC);
 
     doc["bn"] = baseNameFor(metadata, defaultBaseName);
     doc["n"] = "pumpState";
@@ -137,5 +160,5 @@ void MessagePublisher::publishPumpState(PubSubClient &client, bool isOn, float a
     Serial.print("Publishing the following to msg broker: ");
     Serial.println(buffer);
 
-    client.publish(PUMP_STATE_TOPIC, buffer);
+    client.publish(topic.c_str(), buffer);
 }
