@@ -3,6 +3,7 @@
 
 #include "MessagePublisher.h"
 #include <Arduino.h>
+#include <math.h>
 #include <time.h>
 // #include <BufferedLogger.h>
 #include <shared_vars.h>
@@ -19,6 +20,10 @@ namespace {
 
     const char *baseNameFor(const SensorMetadata &metadata, const String &defaultBaseName) {
         return metadata.asset.empty() ? defaultBaseName.c_str() : metadata.asset.c_str();
+    }
+
+    float roundToHundredth(float value) {
+        return roundf(value * 100.0f) / 100.0f;
     }
 
     void addMetadataFields(JsonDocument &doc, const SensorMetadata &metadata) {
@@ -63,11 +68,12 @@ void MessagePublisher::publishTemperature(PubSubClient &client, float temperatur
     const size_t capacity = JSON_OBJECT_SIZE(16);
     DynamicJsonDocument doc(capacity);
     const String topic = buildTopic(metadata, TEMPERATURE_TOPIC);
+    const float roundedTemperature = roundToHundredth(temperature);
 
     doc["bn"] = baseNameFor(metadata, defaultBaseName);
     doc["n"] = "temperature";
     doc["u"] = "C";
-    doc["v"] = temperature;
+    doc["v"] = roundedTemperature;
     doc["ut"] = (int)time(nullptr);
     addMetadataFields(doc, metadata);
 
