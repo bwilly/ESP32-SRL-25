@@ -7,22 +7,48 @@
 // #include <BufferedLogger.h>
 #include <shared_vars.h>
 
+// v4 topic example: srl/site/Natasha/metric/propulsion/gear/temperature
+// srl/site/natasha will be set for now in telegraf config
+
 namespace {
-    constexpr char TEMPERATURE_TOPIC[] = "ship/temperature";
-    constexpr char HUMIDITY_TOPIC[] = "ship/humidity";
-    constexpr char PUMP_STATE_TOPIC[] = "ship/pump";
+    constexpr char TEMPERATURE_TOPIC[] = "metric/temperature";
+    constexpr char HUMIDITY_TOPIC[] = "metric/humidity";
+    constexpr char PUMP_STATE_TOPIC[] = "metric/pump";
+
+    const char *baseNameFor(const SensorMetadata &metadata, const String &defaultBaseName) {
+        return metadata.asset.empty() ? defaultBaseName.c_str() : metadata.asset.c_str();
+    }
+
+    void addMetadataFields(JsonDocument &doc, const SensorMetadata &metadata) {
+        if (!metadata.asset.empty()) {
+            doc["a"] = metadata.asset.c_str();
+        }
+        if (!metadata.assetType.empty()) {
+            doc["at"] = metadata.assetType.c_str();
+        }
+        if (!metadata.group.empty()) {
+            doc["g"] = metadata.group.c_str();
+        }
+        if (!metadata.canonicalSystem.empty()) {
+            doc["cs"] = metadata.canonicalSystem.c_str();
+        }
+        if (!metadata.parenset.empty()) {
+            doc["p"] = metadata.parenset.c_str();
+        }
+    }
 }
 
-
-void MessagePublisher::publishTemperature(PubSubClient &client, float temperature, const String &location) {
-    const size_t capacity = JSON_OBJECT_SIZE(10);
+// baseName (bn) is the esp device name, independent of sensors it may manage. also referred to as "locationName" 
+void MessagePublisher::publishTemperature(PubSubClient &client, float temperature, const SensorMetadata &metadata, const String &defaultBaseName) {
+    const size_t capacity = JSON_OBJECT_SIZE(16);
     DynamicJsonDocument doc(capacity);
 
-    doc["bn"] = location;
+    doc["bn"] = baseNameFor(metadata, defaultBaseName);
     doc["n"] = "temperature";
     doc["u"] = "C";
     doc["v"] = temperature;
     doc["ut"] = (int)time(nullptr);
+    addMetadataFields(doc, metadata);
 
     char buffer[512];
     serializeJson(doc, buffer);
@@ -43,16 +69,16 @@ void MessagePublisher::publishTemperature(PubSubClient &client, float temperatur
     }
 }
 
-void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, const String &location) {
-    // Same style/capacity as temperature
-    const size_t capacity = JSON_OBJECT_SIZE(10);
+void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, const SensorMetadata &metadata, const String &defaultBaseName) {
+    const size_t capacity = JSON_OBJECT_SIZE(16);
     DynamicJsonDocument doc(capacity);
 
-    doc["bn"] = location;
+    doc["bn"] = baseNameFor(metadata, defaultBaseName);
     doc["n"]  = "humidity";
     doc["u"]  = "%";
     doc["v"]  = humidity;
     doc["ut"] = (int)time(nullptr);
+    addMetadataFields(doc, metadata);
 
     char buffer[512];
     serializeJson(doc, buffer);
@@ -93,16 +119,17 @@ void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, con
 //     client.publish(PUMP_STATE_TOPIC, buffer);
 // }
 
-void MessagePublisher::publishPumpState(PubSubClient &client, bool isOn, float amps, const String &location) {
-    const size_t capacity = JSON_OBJECT_SIZE(12); // Increased slightly to allow amps
+void MessagePublisher::publishPumpState(PubSubClient &client, bool isOn, float amps, const SensorMetadata &metadata, const String &defaultBaseName) {
+    const size_t capacity = JSON_OBJECT_SIZE(18);
     DynamicJsonDocument doc(capacity);
 
-    doc["bn"] = location;
+    doc["bn"] = baseNameFor(metadata, defaultBaseName);
     doc["n"] = "pumpState";
     doc["u"] = "bool";
     doc["v"] = isOn ? 1 : 0;
     doc["ut"] = (int)time(nullptr);
-    doc["amps"] = amps;  // <-- New field!
+    doc["amps"] = amps;
+    addMetadataFields(doc, metadata);
 
     char buffer[256];
     serializeJson(doc, buffer);
@@ -112,4 +139,3 @@ void MessagePublisher::publishPumpState(PubSubClient &client, bool isOn, float a
 
     client.publish(PUMP_STATE_TOPIC, buffer);
 }
-

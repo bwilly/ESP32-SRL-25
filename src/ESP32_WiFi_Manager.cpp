@@ -976,7 +976,8 @@ float calculatePercentageChange(float oldValue, float newValue)
 
 void maybePublishEnvToMqtt(
     const char *sourceName,
-    const String &publishBaseName,
+    const SensorMetadata &metadata,
+    const String &defaultBaseName,
     float currentTemperature,
     float currentHumidity,
     float &previousTemperatureRef,
@@ -1054,7 +1055,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishTemperature...\n");
-    MessagePublisher::publishTemperature(mqClient, currentTemperature, publishBaseName);
+    MessagePublisher::publishTemperature(mqClient, currentTemperature, metadata, defaultBaseName);
     previousTemperatureRef = currentTemperature;
     lastPublishTimeTempRef = now;
   }
@@ -1068,7 +1069,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishHumidity...\n");
-    MessagePublisher::publishHumidity(mqClient, currentHumidity, publishBaseName);
+    MessagePublisher::publishHumidity(mqClient, currentHumidity, metadata, defaultBaseName);
     previousHumidityRef = currentHumidity;
     lastPublishTimeHumRef = now;
   }
@@ -1219,14 +1220,11 @@ void loop()
     {
       float currentTemperature = readDHTTemperature();
       float currentHumidity = readDHTHumidity();
-      const String dhtPublishName =
-          gConfig.sensors.dht.asset.empty()
-              ? String(locationName.c_str())
-              : String(gConfig.sensors.dht.asset.c_str());
 
       maybePublishEnvToMqtt(
           "DHT",
-          dhtPublishName,
+          gConfig.sensors.dht,
+          String(locationName.c_str()),
           currentTemperature,
           currentHumidity,
           previousTemperature,
@@ -1240,16 +1238,13 @@ void loop()
     {
       float chtTemp = NAN;
       float chtHum = NAN;
-      const String chtPublishName =
-          gConfig.sensors.cht.asset.empty()
-              ? String(locationName.c_str())
-              : String(gConfig.sensors.cht.asset.c_str());
 
       if (envSensor.read(chtTemp, chtHum))
       {
         maybePublishEnvToMqtt(
             "CHT832x",
-            chtPublishName,
+            gConfig.sensors.cht,
+            String(locationName.c_str()),
             chtTemp,
             chtHum,
             previousCHTTemperature,
@@ -1275,10 +1270,6 @@ void loop()
   if (gConfig.sensors.sct.enabled)
   {
     float amps = fabsf(sctSensor.readCurrentACRms());
-    const String sctPublishName =
-        gConfig.sensors.sct.asset.empty()
-            ? String(locationName.c_str())
-            : String(gConfig.sensors.sct.asset.c_str());
 
     bool pumpState = (amps > gConfig.sensors.sct.onThresholdAmps);
 
@@ -1288,7 +1279,8 @@ void loop()
           mqClient,
           pumpState,
           amps,
-          sctPublishName);
+          gConfig.sensors.sct,
+          String(locationName.c_str()));
 
       sctLastPumpState = pumpState;
       sctFirstRun = false;
@@ -1299,13 +1291,21 @@ void loop()
   {
     temptSensor.requestTemperatures();
     TemperatureReading *readings = temptSensor.getTemperatureReadings(gConfig.sensors.w1); // todo:performance: move declaration outside of the esp loop
+    const size_t w1DeviceCount =
+        gConfig.sensors.w1.devices.size() < static_cast<size_t>(MAX_READINGS)
+            ? gConfig.sensors.w1.devices.size()
+            : static_cast<size_t>(MAX_READINGS);
 
-    for (int i = 0; i < MAX_READINGS; i++)
+    for (size_t i = 0; i < w1DeviceCount; i++)
     {
       // Check if the reading is valid, e.g., by checking if the name is not empty
       if (!readings[i].name.isEmpty())
       {
-        MessagePublisher::publishTemperature(mqClient, readings[i].value, readings[i].name);
+        MessagePublisher::publishTemperature(
+            mqClient,
+            readings[i].value,
+            gConfig.sensors.w1.devices[i],
+            String(locationName.c_str()));
       }
     }
   }
@@ -1313,10 +1313,6 @@ void loop()
   if (gConfig.sensors.acs.enabled)
   {
     float amps = fabs(readACS712Current());
-    const String acsPublishName =
-        gConfig.sensors.acs.asset.empty()
-            ? String(locationName.c_str())
-            : String(gConfig.sensors.acs.asset.c_str());
     logger.log(amps);
     logger.log(" amps\n");
 
@@ -1334,7 +1330,7 @@ void loop()
     if (firstRun || pumpState != lastPumpState || pumpState)
     {
       // Only publish if the pump state changed ...i don't like hiding the visibility of being OFF, but too much data
-      MessagePublisher::publishPumpState(mqClient, pumpState, amps, acsPublishName);
+      MessagePublisher::publishPumpState(mqClient, pumpState, amps, gConfig.sensors.acs, String(locationName.c_str()));
       lastPumpState = pumpState; // Update the last known state
       firstRun = false;
     }
