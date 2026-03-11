@@ -13,6 +13,12 @@ Successfully uploaded and used this POC. Feb24'23
 
 Built and deployed using VS Code and PlatformIO plugin.
 
+versions
+- v1: ui/indiv spiff config
+- v2: flat json config
+- v3: module json (never fully deployed)
+- v4: topic change and  enhance/improved hierachical sensor fields (in-dev Mar8'26)
+
 ---
 
 ## 2. Bootstrap Configuration

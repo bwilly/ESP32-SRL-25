@@ -142,7 +142,7 @@ StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 // String version = String(APP_VERSION) + "::" + APP_COMMIT_HASH + ":: TelnetBridge-removed";
 String version = String(APP_VERSION) + "::" +
                  APP_COMMIT_HASH + "::" +
-                 APP_BUILD_DATE + ":: v3: json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
+                 APP_BUILD_DATE + ":: v4:topic; json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
 
 // trying to identify cause of unreliable dht22 readings
 
@@ -1220,9 +1220,9 @@ void loop()
       float currentTemperature = readDHTTemperature();
       float currentHumidity = readDHTHumidity();
       const String dhtPublishName =
-          gConfig.sensors.dht.name.empty()
+          gConfig.sensors.dht.asset.empty()
               ? String(locationName.c_str())
-              : String(gConfig.sensors.dht.name.c_str());
+              : String(gConfig.sensors.dht.asset.c_str());
 
       maybePublishEnvToMqtt(
           "DHT",
@@ -1241,9 +1241,9 @@ void loop()
       float chtTemp = NAN;
       float chtHum = NAN;
       const String chtPublishName =
-          gConfig.sensors.cht.name.empty()
+          gConfig.sensors.cht.asset.empty()
               ? String(locationName.c_str())
-              : String(gConfig.sensors.cht.name.c_str());
+              : String(gConfig.sensors.cht.asset.c_str());
 
       if (envSensor.read(chtTemp, chtHum))
       {
@@ -1276,9 +1276,9 @@ void loop()
   {
     float amps = fabsf(sctSensor.readCurrentACRms());
     const String sctPublishName =
-        gConfig.sensors.sct.name.empty()
+        gConfig.sensors.sct.asset.empty()
             ? String(locationName.c_str())
-            : String(gConfig.sensors.sct.name.c_str());
+            : String(gConfig.sensors.sct.asset.c_str());
 
     bool pumpState = (amps > gConfig.sensors.sct.onThresholdAmps);
 
@@ -1314,9 +1314,9 @@ void loop()
   {
     float amps = fabs(readACS712Current());
     const String acsPublishName =
-        gConfig.sensors.acs.name.empty()
+        gConfig.sensors.acs.asset.empty()
             ? String(locationName.c_str())
-            : String(gConfig.sensors.acs.name.c_str());
+            : String(gConfig.sensors.acs.asset.c_str());
     logger.log(amps);
     logger.log(" amps\n");
 

@@ -89,7 +89,7 @@ TemperatureReading *TemperatureSensor::getTemperatureReadings(const W1Config &w1
             value = sensors.getTempC(address);
         }
 
-        readings[i] = {String(device.name.c_str()), value};
+        readings[i] = {String(device.asset.c_str()), value};
     }
 
     readings[MAX_READINGS] = {"", 0.0f}; // Ending marker with default values
