@@ -26,6 +26,10 @@ namespace {
         return roundf(value * 100.0f) / 100.0f;
     }
 
+    void formatHundredthJson(float value, char *buffer, size_t bufferSize) {
+        snprintf(buffer, bufferSize, "%.2f", roundToHundredth(value));
+    }
+
     void addMetadataFields(JsonDocument &doc, const SensorMetadata &metadata) {
         if (!metadata.asset.empty()) {
             doc["a"] = metadata.asset.c_str();
@@ -68,12 +72,13 @@ void MessagePublisher::publishTemperature(PubSubClient &client, float temperatur
     const size_t capacity = JSON_OBJECT_SIZE(16);
     DynamicJsonDocument doc(capacity);
     const String topic = buildTopic(metadata, TEMPERATURE_TOPIC);
-    const float roundedTemperature = roundToHundredth(temperature);
+    char valueBuffer[16];
 
     doc["bn"] = baseNameFor(metadata, defaultBaseName);
     doc["n"] = "temperature";
     doc["u"] = "C";
-    doc["v"] = roundedTemperature;
+    formatHundredthJson(temperature, valueBuffer, sizeof(valueBuffer));
+    doc["v"] = serialized(valueBuffer);
     doc["ut"] = (int)time(nullptr);
     addMetadataFields(doc, metadata);
 
@@ -100,11 +105,13 @@ void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, con
     const size_t capacity = JSON_OBJECT_SIZE(16);
     DynamicJsonDocument doc(capacity);
     const String topic = buildTopic(metadata, HUMIDITY_TOPIC);
+    char valueBuffer[16];
 
     doc["bn"] = baseNameFor(metadata, defaultBaseName);
     doc["n"]  = "humidity";
     doc["u"]  = "%";
-    doc["v"]  = humidity;
+    formatHundredthJson(humidity, valueBuffer, sizeof(valueBuffer));
+    doc["v"]  = serialized(valueBuffer);
     doc["ut"] = (int)time(nullptr);
     addMetadataFields(doc, metadata);
 
