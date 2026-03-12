@@ -243,7 +243,7 @@ AsyncWebServer zabbixServer(10050);
 unsigned long previousMillis = 0;
 const long interval = 40000; // interval to wait for Wi-Fi connection (milliseconds)
 unsigned long previous_time = 0;
-unsigned long reconnect_delay = 180000; // 3-min delay
+unsigned long reconnect_delay = 60000; // 60-second delay for testing
 
 static bool lastPumpState = false; // Assume OFF at startup
 static bool firstRun = true;       // New flag to force first publish
@@ -1236,6 +1236,9 @@ void loop()
     logger.log("\n");
     Serial.println("s:Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm");
     logger.log("WiFi: Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm\n");
+    logger.handle();
+    logger.flush(16);
+    delay(200);
     // WiFi.disconnect();
     // WiFi.reconnect();
     ESP.restart();
