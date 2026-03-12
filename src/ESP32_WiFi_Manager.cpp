@@ -126,8 +126,19 @@ constexpr const char *AP_PASSWORD = "saltmeadow"; // >= 8 chars
 #define SERVICE_PORT 80
 // #define LOCATION "SandBBedroom"
 
-#define AP_REBOOT_TIMEOUT 600000 // 10 minutes in milliseconds
-unsigned long apStartTime = 0;   // Variable to track the start time in AP mode
+
+// Timer variables
+#define AP_REBOOT_TIMEOUT  // 5 minutes in milliseconds
+unsigned long reconnect_delay = 900000; // 15-minute delay before rebooting after STA disconnect
+const long WIFI_CONNECT_INTERVAL = 40000; // interval to wait for Wi-Fi connection (milliseconds)
+unsigned long apStartTime = 0;   // Variable to track the start time in fallback AP mode
+unsigned long previousMillis = 0;
+unsigned long staDisconnectStartTime = 0;
+bool isFallbackApMode = false;
+
+
+static bool lastPumpState = false; // Assume OFF at startup
+static bool firstRun = true;       // New flag to force first publish
 
 volatile bool g_otaRequested = false;
 String g_otaUrl;
@@ -142,7 +153,7 @@ StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 // String version = String(APP_VERSION) + "::" + APP_COMMIT_HASH + ":: TelnetBridge-removed";
 String version = String(APP_VERSION) + "::" +
                  APP_COMMIT_HASH + "::" +
-                 APP_BUILD_DATE + ":: v4:topic; json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
+                 APP_BUILD_DATE + ":: v4:topic; wifi timers, json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
 
 // trying to identify cause of unreliable dht22 readings
 
@@ -238,15 +249,7 @@ AsyncWebServer zabbixServer(10050);
 // IPAddress localGateway(192, 168, 1, 1); //hardcoded
 // IPAddress subnet(255, 255, 0, 0);
 
-// Timer variables
-// todo: can combine interval and delay. each is from copy/paste. one solves initial connect, the other is for lost connection retry
-unsigned long previousMillis = 0;
-const long interval = 40000; // interval to wait for Wi-Fi connection (milliseconds)
-unsigned long previous_time = 0;
-unsigned long reconnect_delay = 60000; // 60-second delay for testing
 
-static bool lastPumpState = false; // Assume OFF at startup
-static bool firstRun = true;       // New flag to force first publish
 
 // Set LED GPIO
 const int ledPin = 2;
@@ -454,7 +457,7 @@ bool initWiFi()
     Serial.println(WiFi.status());
 
     unsigned long currentMillis = millis();
-    if (currentMillis - startAttemptTime >= interval)
+    if (currentMillis - startAttemptTime >= WIFI_CONNECT_INTERVAL)
     {
       Serial.println("s:Failed to connect after interval timeout.");
 
@@ -474,6 +477,9 @@ bool initWiFi()
   }
 
   // Successful connection
+  isFallbackApMode = false;
+  staDisconnectStartTime = 0;
+
   Serial.println("\ns:WiFi connected");
   Serial.print("s:IP address: ");
   Serial.println(WiFi.localIP());
@@ -735,6 +741,9 @@ void loadBootstrapConfig()
 
 void setupStationMode()
 {
+  isFallbackApMode = false;
+  staDisconnectStartTime = 0;
+
   // setup: path1 (Station Mode)
   // todo: configUrl and locationName should come from gConfig boot values
   // tryFetchAndApplyRemoteConfig(logger, configUrl, locationName, FNAME_CONFIGREMOTE);
@@ -867,7 +876,9 @@ void setupAccessPointMode()
   // SETUP : Path2
   // This path is meant to run only upon initial one-time setup
 
+  isFallbackApMode = true;
   apStartTime = millis(); // Record the start time in AP mode
+  staDisconnectStartTime = 0;
 
   Serial.println("s:Setting AP (Access Point)");
 
@@ -1193,15 +1204,16 @@ void loop()
     // If performHttpOta succeeds, it calls ESP.restart() and we never reach here.
   }
 
-  // Check if we are in AP mode and if so, if it's time to reboot
-  if (WiFi.getMode() == WIFI_AP) // && WiFi.softAPIP().toString() == "192.168.4.1")
+  // Reboot if the device has been left in fallback AP mode too long.
+  if (isFallbackApMode)
   {
     if (currentMillis - apStartTime >= AP_REBOOT_TIMEOUT)
     {
       logger.log("Rebooting due to extended time in AP mode...");
       Serial.println("s:Rebooting due to extended time in AP mode...");
-      delay(1000);
-      yield();
+      logger.handle();
+      logger.flush(16);
+      delay(200);
       ESP.restart();
     }
   }
@@ -1209,40 +1221,45 @@ void loop()
   // does this need to be here? I didn't use it, here, on the new master project. maybe it was only needed for the non-async web server? bwilly Feb26'23
   // server.handleClient();
 
-  unsigned long current_time = millis(); // number of milliseconds since the upload
-
-  // checking for WIFI connection
-  if ((WiFi.status() != WL_CONNECTED) && (current_time - previous_time >= reconnect_delay))
+  if (!isFallbackApMode)
   {
-    Serial.print("s:millis: ");
-    logger.log("WiFi:millis: ");
-    Serial.println(millis());
-    logger.log(String(millis()).c_str());
-    logger.log("\n");
-    Serial.print("s:previous_time: ");
-    logger.log("WiFi:previous_time: ");
-    Serial.println(previous_time);
-    logger.log(String(previous_time).c_str());
-    logger.log("\n");
-    Serial.print("s:current_time: ");
-    logger.log("WiFi:current_time: ");
-    Serial.println(current_time);
-    logger.log(String(current_time).c_str());
-    logger.log("\n");
-    Serial.print("s:reconnect_delay: ");
-    logger.log("WiFi:reconnect_delay: ");
-    Serial.println(reconnect_delay);
-    logger.log(String(reconnect_delay).c_str());
-    logger.log("\n");
-    Serial.println("s:Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm");
-    logger.log("WiFi: Reconnecting to WIFI network by RESTARTING ESP to leverage best AP algorithm\n");
-    logger.handle();
-    logger.flush(16);
-    delay(200);
-    // WiFi.disconnect();
-    // WiFi.reconnect();
-    ESP.restart();
-    previous_time = current_time;
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      staDisconnectStartTime = 0;
+    }
+    else
+    {
+      if (staDisconnectStartTime == 0)
+      {
+        staDisconnectStartTime = currentMillis;
+        Serial.println("s:WiFi disconnected; starting station reconnect watchdog.");
+        logger.log("WiFi: disconnected; starting station reconnect watchdog\n");
+      }
+      else if (currentMillis - staDisconnectStartTime >= reconnect_delay)
+      {
+        Serial.print("s:millis: ");
+        logger.log("WiFi:millis: ");
+        Serial.println(millis());
+        logger.log(String(millis()).c_str());
+        logger.log("\n");
+        Serial.print("s:staDisconnectStartTime: ");
+        logger.log("WiFi:staDisconnectStartTime: ");
+        Serial.println(staDisconnectStartTime);
+        logger.log(String(staDisconnectStartTime).c_str());
+        logger.log("\n");
+        Serial.print("s:reconnect_delay: ");
+        logger.log("WiFi:reconnect_delay: ");
+        Serial.println(reconnect_delay);
+        logger.log(String(reconnect_delay).c_str());
+        logger.log("\n");
+        Serial.println("s:WiFi remained disconnected in station mode; restarting ESP.");
+        logger.log("WiFi: remained disconnected in station mode; restarting ESP\n");
+        logger.handle();
+        logger.flush(16);
+        delay(200);
+        ESP.restart();
+      }
+    }
   }
 
   if (gConfig.mqtt.enabled)
