@@ -56,7 +56,8 @@ extern String g_bootstrapErr;
 
 static void registerRoutesIndex(AsyncWebServer &server)
 {
-    server.on("/routes", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/routes", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
 
         struct LinkRow {
             const char *name;
@@ -138,10 +139,10 @@ static void registerRoutesIndex(AsyncWebServer &server)
             } else {
                 // Render a mini form for POST endpoints.
                 // NOTE: this posts form-encoded. For raw JSON endpoints, keep using curl/Postman.
-                html += "<form method='POST' action='";
+                html += "<form method='POST' enctype='text/plain' action='";
                 html += r.path;
                 html += "'>";
-                html += "<textarea name='body' placeholder='Paste JSON or form content here'></textarea><br/>";
+                html += "<textarea name='json' placeholder='Paste JSON or form content here'></textarea><br/>";
                 html += "<button type='submit'>POST</button>";
                 html += "</form>";
             }
@@ -156,10 +157,8 @@ static void registerRoutesIndex(AsyncWebServer &server)
 
         html += "</table></body></html>";
 
-        request->send(200, "text/html", html);
-    });
+        request->send(200, "text/html", html); });
 }
-
 
 // -------------------------
 // /config/* endpoints
@@ -167,61 +166,44 @@ static void registerRoutesIndex(AsyncWebServer &server)
 
 static void registerConfigRoutesCommon(AsyncWebServer &server)
 {
-    // POST raw JSON bootstrap config (curl-friendly)
-    server.on(
-        "/config/post/bootstrap",
-        HTTP_POST,
-        [](AsyncWebServerRequest *request) {
-            // body handler responds; empty finalizer OK
-        },
-        NULL,
-        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
 
-            // Hard guard to avoid RAM blowups
-            if (total > 4096) {
-                request->send(413, "text/plain", "Too large");
-                return;
-            }
+    server.on("/config/post/bootstrap", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
 
-            if (index == 0) {
-                g_bootstrapBody = "";
-                g_bootstrapBody.reserve(total);
-                g_bootstrapErr = "";
-            }
+    if (!request->hasArg("json")) {
+        request->send(400, "text/plain", "Missing json field");
+        return;
+    }
 
-            g_bootstrapBody += String((char *)data, len);
+    g_bootstrapBody = request->arg("json");
+    g_bootstrapPending = true;
 
-            if (index + len == total) {
-                // Defer JSON parse + SPIFFS write out of the async callback
-                g_bootstrapPending = true;
-                request->send(200, "text/plain", "Bootstrap received; applying shortly...");
-            }
-        });
+    request->send(200, "text/plain", "Bootstrap received"); });
 
     // View the locally stored working config: /config.json
-    server.on("/config/show/FNAME_BOOTSTRAP", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/show/FNAME_BOOTSTRAP", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         const char *path = FNAME_BOOTSTRAP;
         if (!SPIFFS.exists(path)) {
             request->send(404, "text/plain", "No /bootstrap.json stored");
             return;
         }
-        request->send(SPIFFS, path, "application/json");
-    });
-
+        request->send(SPIFFS, path, "application/json"); });
 
     // View the locally stored working config: /config.json
-    server.on("/config/show/FNAME_CONFIG", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/show/FNAME_CONFIG", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         const char *path = FNAME_CONFIG;
         if (!SPIFFS.exists(path)) {
             request->send(404, "text/plain", "No /config.json stored");
             return;
         }
-        request->send(SPIFFS, path, "application/json");
-    });
+        request->send(SPIFFS, path, "application/json"); });
 
     // View the effective cache file (NOTE: EFFECTIVE_CACHE_PATH comes from ConfigLoad.h)
     // legacy
-    server.on("/config/show/EFFECTIVE_CACHE_PATH", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/show/EFFECTIVE_CACHE_PATH", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         const char *path = EFFECTIVE_CACHE_PATH;
 
         if (!SPIFFS.exists(path)) {
@@ -229,11 +211,11 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
             return;
         }
 
-        request->send(SPIFFS, path, "application/json");
-    });
+        request->send(SPIFFS, path, "application/json"); });
 
     // View the last downloaded remote snapshot: /config-remote.json
-    server.on("/config/show/FNAME_CONFIGREMOTE", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/show/FNAME_CONFIGREMOTE", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         const char *path = FNAME_CONFIGREMOTE;
 
         if (!SPIFFS.exists(path)) {
@@ -241,50 +223,49 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
             return;
         }
 
-        request->send(SPIFFS, path, "application/json");
-    });
+        request->send(SPIFFS, path, "application/json"); });
 
     // Clear cache helper
     // legacy
-    server.on("/config/delete/file/EFFECTIVE_CACHE_PATH", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/delete/file/EFFECTIVE_CACHE_PATH", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         bool ok = deleteJsonFile(SPIFFS, EFFECTIVE_CACHE_PATH);
         if (ok) {
             request->send(200, "text/plain",
                           "legacy Config JSON cache cleared. It will not be used until remote config repopulates it.");
         } else {
             request->send(500, "text/plain", "Failed to clear config JSON cache.");
-        }
-    });
+        } });
 
-    server.on("/config/delete/file/FNAME_CONFIG", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/delete/file/FNAME_CONFIG", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         bool ok = deleteJsonFile(SPIFFS, FNAME_CONFIG);
         if (ok) {
             request->send(200, "text/plain",
                           "Config.JSON deleted.");
         } else {
             request->send(500, "text/plain", "Failed to clear config JSON.");
-        }
-    });
+        } });
 
-    server.on("/config/delete/file/FNAME_BOOTSTRAP", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/delete/file/FNAME_BOOTSTRAP", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         bool ok = deleteJsonFile(SPIFFS, FNAME_BOOTSTRAP);
         if (ok) {
             request->send(200, "text/plain",
                           "Config bootstrap deleted.");
         } else {
             request->send(500, "text/plain", "Failed to clear config JSON.");
-        }
-    });
+        } });
 
-    server.on("/config/delete/file/FNAME_CONFIGREMOTE", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config/delete/file/FNAME_CONFIGREMOTE", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         bool ok = deleteJsonFile(SPIFFS, FNAME_CONFIGREMOTE);
         if (ok) {
             request->send(200, "text/plain",
                           "remote config stored locally has been deleted.");
         } else {
             request->send(500, "text/plain", "Failed to clear config JSON.");
-        }
-    });
+        } });
 }
 
 // -------------------------
@@ -293,11 +274,11 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
 
 static void registerDeviceRoutes(AsyncWebServer &server)
 {
-    server.on("/device/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/device/restart", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         request->send(200, "text/plain", "Restarting...");
         delay(300);
-        ESP.restart();
-    });
+        ESP.restart(); });
 }
 
 // -------------------------
@@ -306,7 +287,8 @@ static void registerDeviceRoutes(AsyncWebServer &server)
 
 static void registerOtaRoutes(AsyncWebServer &server, AppConfig &cfg)
 {
-    server.on("/ota/run", HTTP_GET, [&cfg](AsyncWebServerRequest *request) {
+    server.on("/ota/run", HTTP_GET, [&cfg](AsyncWebServerRequest *request)
+              {
         std::string fwUrl = cfg.boot.remote.otaUrl;
         
         // Trim whitespace from both ends
@@ -327,8 +309,7 @@ static void registerOtaRoutes(AsyncWebServer &server, AppConfig &cfg)
         g_otaRequested = true;
 
         std::string response = "OTA scheduled from " + fwUrl + "\nDevice will reboot if update succeeds. \n";
-        request->send(200, "text/plain", response.c_str());
-    });
+        request->send(200, "text/plain", response.c_str()); });
 }
 // -------------------------
 // Station-mode UI endpoints
@@ -341,33 +322,31 @@ static void registerStationUiRoutes(AsyncWebServer &server)
     registerRoutesIndex(server);
 
     // Route for root / web page
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(SPIFFS, "/index.html", "text/html", false, processor);
-    });
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(SPIFFS, "/index.html", "text/html", false, processor); });
     server.serveStatic("/", SPIFFS, "/");
 
     // Route to Prometheus Metrics Exporter
-    server.on("/metrics", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", readAndGeneratePrometheusExport(locationName.c_str()));
-    });
+    server.on("/metrics", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", readAndGeneratePrometheusExport(locationName.c_str())); });
 
-    server.on("/devicename", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/devicename", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         // keep endpoint name stable; returning locationName matches your newer pattern
-        request->send(200, "text/html", String(locationName.c_str()));
-    });
+        request->send(200, "text/html", String(locationName.c_str())); });
 
-    server.on("/bssid", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", WiFi.BSSIDstr());
-    });
+    server.on("/bssid", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", WiFi.BSSIDstr()); });
 
-    server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         char buffer[32];
         float temperature = readDHTTemperature();
         snprintf(buffer, sizeof(buffer), "%.2f", temperature);
-        request->send(200, "text/html", buffer);
-    });
+        request->send(200, "text/html", buffer); });
 
-    server.on("/cht/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/cht/temperature", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         char buffer[32];
         float chtTemp = NAN;
         float chtHum = NAN;
@@ -377,10 +356,10 @@ static void registerStationUiRoutes(AsyncWebServer &server)
             request->send(200, "text/html", buffer);
         } else {
             request->send(500, "text/plain", "CHT read failed");
-        }
-    });
+        } });
 
-    server.on("/cht/humidity", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/cht/humidity", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         char buffer[32];
         float chtTemp = NAN;
         float chtHum = NAN;
@@ -390,46 +369,43 @@ static void registerStationUiRoutes(AsyncWebServer &server)
             request->send(200, "text/html", buffer);
         } else {
             request->send(500, "text/plain", "CHT read failed");
-        }
-    });
+        } });
 
     // copy/paste from setup section for AP -- changing URL path
     // todo: consolidate this copied code
-    server.on("/manage", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(SPIFFS, "/wifimanager.html", "text/html", false, processor);
-    });
+    server.on("/manage", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(SPIFFS, "/wifimanager.html", "text/html", false, processor); });
 
-    server.on("/version", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", version);
-    });
+    server.on("/version", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", version); });
 
-    server.on("/onewire", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/onewire", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         String result = printDS18b20();
-        request->send(200, "text/html", result);
-    });
+        request->send(200, "text/html", result); });
 
     // todo: find out why some readings provide 129 now, and on prev commit, they returned -127 for same bad reading. Now, the method below return -127, but this one is now 129. Odd. Aug19 '23
-    server.on("/onewiretempt", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/onewiretempt", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         temptSensor.requestTemperatures();
         TemperatureReading *readings = temptSensor.getTemperatureReadings(gConfig.sensors.w1);
-        request->send(200, "text/html", SendHTML(readings, MAX_READINGS));
-    });
+        request->send(200, "text/html", SendHTML(readings, MAX_READINGS)); });
 
     // todo: find out why some readings provide -127
-    server.on("/onewiremetrics", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/onewiremetrics", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         temptSensor.requestTemperatures();
         TemperatureReading *readings = temptSensor.getTemperatureReadings(gConfig.sensors.w1);
-        request->send(200, "text/html", buildPrometheusMultiTemptExport(readings));
-    });
+        request->send(200, "text/html", buildPrometheusMultiTemptExport(readings)); });
 
     // Legacy HTML POST handler remains for now.
     // You said you want to retire it; we’ll remove after bootstrap JSON migration is solid.
-    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
+    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
         handlePostParameters(request);
         request->send(200, "text/plain", "Done. ESP will restart, connect to your AP");
         delay(mainDelay.toInt()); // delay(3000);
-        ESP.restart();
-    });
+        ESP.restart(); });
 }
 
 // -------------------------
@@ -438,21 +414,20 @@ static void registerStationUiRoutes(AsyncWebServer &server)
 
 static void registerApUiRoutes(AsyncWebServer &server)
 {
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(SPIFFS, "/wifimanager.html", "text/html", false, processor);
-    });
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(SPIFFS, "/wifimanager.html", "text/html", false, processor); });
 
     server.serveStatic("/", SPIFFS, "/"); // for things such as CSS
 
     // Legacy HTML POST handler remains for now.
     // You said you want JSON-only; we’ll remove this after bootstrap migration is in.
-    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
+    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
         handlePostParameters(request);
         request->send(200, "text/plain", "Done. ESP will restart, connect to your AP");
         delay(3000);
         logger.log("Updated. Now restarting...\n");
-        ESP.restart();
-    });
+        ESP.restart(); });
 }
 
 // ---- Public API ----
