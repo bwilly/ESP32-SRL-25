@@ -170,14 +170,47 @@ static void registerConfigRoutesCommon(AsyncWebServer &server)
     server.on("/config/post/bootstrap", HTTP_POST, [](AsyncWebServerRequest *request)
               {
 
-    if (!request->hasArg("json")) {
+    if (request->hasArg("json")) {
+        g_bootstrapBody = request->arg("json");
+        g_bootstrapPending = true;
+        request->send(200, "text/plain", "Bootstrap received");
+        return;
+    }
+
+    if (request->hasArg("plain")) {
+        g_bootstrapBody = request->arg("plain");
+        g_bootstrapPending = true;
+        request->send(200, "text/plain", "Bootstrap received");
+        return;
+    }
+
+    if (request->contentLength() == 0) {
+        request->send(400, "text/plain", "Missing json field");
+    } }, nullptr, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              {
+    if (request->hasArg("json") || request->hasArg("plain") || total == 0) {
+        return;
+    }
+
+    if (index == 0) {
+        g_bootstrapBody = "";
+        g_bootstrapBody.reserve(total);
+    }
+
+    for (size_t i = 0; i < len; ++i) {
+        g_bootstrapBody += static_cast<char>(data[i]);
+    }
+
+    if (index + len != total) {
+        return;
+    }
+
+    if (g_bootstrapBody.isEmpty()) {
         request->send(400, "text/plain", "Missing json field");
         return;
     }
 
-    g_bootstrapBody = request->arg("json");
     g_bootstrapPending = true;
-
     request->send(200, "text/plain", "Bootstrap received"); });
 
     // View the locally stored working config: /config.json

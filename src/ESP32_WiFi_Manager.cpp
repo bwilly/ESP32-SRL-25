@@ -1179,7 +1179,7 @@ void loop()
       logger.log(buf);
       logger.handle();
       logger.flush(16);
-      delay(200);
+      delay(800);
       ESP.restart();
     }
     else
