@@ -128,7 +128,7 @@ constexpr const char *AP_PASSWORD = "saltmeadow"; // >= 8 chars
 
 
 // Timer variables
-#define AP_REBOOT_TIMEOUT  // 5 minutes in milliseconds
+#define AP_REBOOT_TIMEOUT 300000 // 5 minutes in milliseconds
 unsigned long reconnect_delay = 900000; // 15-minute delay before rebooting after STA disconnect
 const long WIFI_CONNECT_INTERVAL = 40000; // interval to wait for Wi-Fi connection (milliseconds)
 unsigned long apStartTime = 0;   // Variable to track the start time in fallback AP mode
