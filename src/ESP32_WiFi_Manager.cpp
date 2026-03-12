@@ -1010,7 +1010,6 @@ float calculatePercentageChange(float oldValue, float newValue)
 void maybePublishEnvToMqtt(
     const char *sourceName,
     const SensorMetadata &metadata,
-    const String &defaultBaseName,
     float currentTemperature,
     float currentHumidity,
     float &previousTemperatureRef,
@@ -1103,7 +1102,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishTemperature...\n");
-    MessagePublisher::publishTemperature(mqClient, currentTemperature, metadata, defaultBaseName);
+    MessagePublisher::publishTemperature(mqClient, currentTemperature, metadata);
     previousTemperatureRef = currentTemperature;
     lastPublishTimeTempRef = now;
   }
@@ -1117,7 +1116,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": publishHumidity...\n");
-    MessagePublisher::publishHumidity(mqClient, currentHumidity, metadata, defaultBaseName);
+    MessagePublisher::publishHumidity(mqClient, currentHumidity, metadata);
     previousHumidityRef = currentHumidity;
     lastPublishTimeHumRef = now;
   }
@@ -1131,14 +1130,14 @@ void maybePublishEnvToMqtt(
 }
 
 unsigned long g_lastMainRunMs = 0;
-const unsigned long MAIN_INTERVAL_MS = gConfig.timing.mainDelayMs < 500 ? 3000 : gConfig.timing.mainDelayMs;
-
 
 void loop()
 {
   unsigned long currentMillis = millis();
+  const unsigned long mainIntervalMs =
+      gConfig.timing.mainDelayMs < 500 ? 3000 : static_cast<unsigned long>(gConfig.timing.mainDelayMs);
 
-  if(currentMillis - g_lastMainRunMs < MAIN_INTERVAL_MS)
+  if(currentMillis - g_lastMainRunMs < mainIntervalMs)
   {
     // Not time to run main loop logic yet
     return;
@@ -1277,7 +1276,6 @@ void loop()
       maybePublishEnvToMqtt(
           "DHT",
           gConfig.sensors.dht,
-          String(locationName.c_str()),
           currentTemperature,
           currentHumidity,
           previousTemperature,
@@ -1297,7 +1295,6 @@ void loop()
         maybePublishEnvToMqtt(
             "CHT832x",
             gConfig.sensors.cht,
-            String(locationName.c_str()),
             chtTemp,
             chtHum,
             previousCHTTemperature,
@@ -1332,8 +1329,7 @@ void loop()
           mqClient,
           pumpState,
           amps,
-          gConfig.sensors.sct,
-          String(locationName.c_str()));
+          gConfig.sensors.sct);
 
       sctLastPumpState = pumpState;
       sctFirstRun = false;
@@ -1357,8 +1353,7 @@ void loop()
         MessagePublisher::publishTemperature(
             mqClient,
             readings[i].value,
-            gConfig.sensors.w1.devices[i],
-            String(locationName.c_str()));
+            gConfig.sensors.w1.devices[i]);
       }
     }
   }
@@ -1383,7 +1378,7 @@ void loop()
     if (firstRun || pumpState != lastPumpState || pumpState)
     {
       // Only publish if the pump state changed ...i don't like hiding the visibility of being OFF, but too much data
-      MessagePublisher::publishPumpState(mqClient, pumpState, amps, gConfig.sensors.acs, String(locationName.c_str()));
+      MessagePublisher::publishPumpState(mqClient, pumpState, amps, gConfig.sensors.acs);
       lastPumpState = pumpState; // Update the last known state
       firstRun = false;
     }

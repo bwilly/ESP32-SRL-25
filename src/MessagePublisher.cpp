@@ -18,10 +18,6 @@ namespace {
     constexpr char HUMIDITY_TOPIC[] = "humidity";
     constexpr char PUMP_STATE_TOPIC[] = "pump";
 
-    const char *baseNameFor(const SensorMetadata &metadata, const String &defaultBaseName) {
-        return metadata.asset.empty() ? defaultBaseName.c_str() : metadata.asset.c_str();
-    }
-
     float roundToHundredth(float value) {
         return roundf(value * 100.0f) / 100.0f;
     }
@@ -67,8 +63,7 @@ String MessagePublisher::buildTopic(const SensorMetadata &metadata, const char *
     return topic;
 }
 
-// baseName (bn) is the esp device name, independent of sensors it may manage. also referred to as "locationName" 
-void MessagePublisher::publishTemperature(PubSubClient &client, float temperature, const SensorMetadata &metadata, const String &defaultBaseName) {
+void MessagePublisher::publishTemperature(PubSubClient &client, float temperature, const SensorMetadata &metadata) {
     if (!isfinite(temperature)) {
         logger.log("MQTT temperature invalid; skipping publish!\n");
         return;
@@ -79,7 +74,9 @@ void MessagePublisher::publishTemperature(PubSubClient &client, float temperatur
     const String topic = buildTopic(metadata, TEMPERATURE_TOPIC);
     char valueBuffer[16];
 
-    doc["bn"] = baseNameFor(metadata, defaultBaseName);
+    if (!metadata.asset.empty()) {
+        doc["bn"] = metadata.asset.c_str();
+    }
     doc["n"] = "temperature";
     doc["u"] = "C";
     formatHundredthJson(temperature, valueBuffer, sizeof(valueBuffer));
@@ -106,7 +103,7 @@ void MessagePublisher::publishTemperature(PubSubClient &client, float temperatur
     }
 }
 
-void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, const SensorMetadata &metadata, const String &defaultBaseName) {
+void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, const SensorMetadata &metadata) {
     if (!isfinite(humidity)) {
         logger.log("MQTT humidity invalid; skipping publish!\n");
         return;
@@ -117,7 +114,9 @@ void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, con
     const String topic = buildTopic(metadata, HUMIDITY_TOPIC);
     char valueBuffer[16];
 
-    doc["bn"] = baseNameFor(metadata, defaultBaseName);
+    if (!metadata.asset.empty()) {
+        doc["bn"] = metadata.asset.c_str();
+    }
     doc["n"]  = "humidity";
     doc["u"]  = "%";
     formatHundredthJson(humidity, valueBuffer, sizeof(valueBuffer));
@@ -164,12 +163,14 @@ void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, con
 //     client.publish(PUMP_STATE_TOPIC, buffer);
 // }
 
-void MessagePublisher::publishPumpState(PubSubClient &client, bool isOn, float amps, const SensorMetadata &metadata, const String &defaultBaseName) {
+void MessagePublisher::publishPumpState(PubSubClient &client, bool isOn, float amps, const SensorMetadata &metadata) {
     const size_t capacity = JSON_OBJECT_SIZE(18);
     DynamicJsonDocument doc(capacity);
     const String topic = buildTopic(metadata, PUMP_STATE_TOPIC);
 
-    doc["bn"] = baseNameFor(metadata, defaultBaseName);
+    if (!metadata.asset.empty()) {
+        doc["bn"] = metadata.asset.c_str();
+    }
     doc["n"] = "pumpState";
     doc["u"] = "bool";
     doc["v"] = isOn ? 1 : 0;
