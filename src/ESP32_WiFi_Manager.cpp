@@ -157,11 +157,15 @@ WiFiClient espClient;
 PubSubClient mqClient(espClient);
 WiFiMulti wifiMulti;
 
+constexpr unsigned long MQTT_RECONNECT_INITIAL_DELAY_MS = 5000;
+constexpr unsigned long MQTT_RECONNECT_MAX_DELAY_MS = 60000;
+
+unsigned long mqttReconnectDelayMs = MQTT_RECONNECT_INITIAL_DELAY_MS;
+unsigned long nextMqttReconnectAtMs = 0;
+
 // DNS settings
 IPAddress primaryDNS(10, 27, 1, 30); // Your Raspberry Pi's IP (DNS server) mar'25: why is this here? is it doing anything
 IPAddress secondaryDNS(8, 8, 8, 8);  // Optional: Google DNS
-
-const unsigned long PUBLISH_INTERVAL = 5 * 60 * 1000; // Five minutes in milliseconds
 
 float previousTemperature = NAN;
 float previousHumidity = NAN;
@@ -913,25 +917,45 @@ void setupAccessPointMode()
   server.begin();
 }
 
-void reconnectMQ()
+void serviceMqttConnection()
 {
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    return;
+  }
+
+  if (mqClient.connected())
+  {
+    mqClient.loop();
+    return;
+  }
+
+  const unsigned long now = millis();
+  if (now < nextMqttReconnectAtMs)
+  {
+    return;
+  }
+
   const char *clientId = gIdentity.name();
 
-  while (!mqClient.connected())
+  logger.log("Attempting MQTT connection...");
+  if (mqClient.connect(clientId))
   {
-    logger.log("Attempting MQTT connection...");
-    if (mqClient.connect(clientId))
-    {
-      logger.log("connected\n");
-    }
-    else
-    {
-      logger.log("failed, rc=");
-      logger.log(mqClient.state());
-      logger.log(" try again in 5 seconds\n");
-      delay(5000);
-    }
+    logger.log("connected\n");
+    mqttReconnectDelayMs = MQTT_RECONNECT_INITIAL_DELAY_MS;
+    nextMqttReconnectAtMs = 0;
+    mqClient.loop();
+    return;
   }
+
+  logger.log("failed, rc=");
+  logger.log(mqClient.state());
+  logger.log(" retry in ");
+  logger.log(String(mqttReconnectDelayMs / 1000).c_str());
+  logger.log(" seconds\n");
+
+  nextMqttReconnectAtMs = now + mqttReconnectDelayMs;
+  mqttReconnectDelayMs = min(mqttReconnectDelayMs * 2, MQTT_RECONNECT_MAX_DELAY_MS);
 }
 
 void publishSimpleMessage()
@@ -958,9 +982,7 @@ void publishSimpleMessage()
   {
     logger.log("MQTT: Not connected to MQTT broker.");
     logger.log(mqClient.state());
-    logger.log(" --MQTT: reconnecting...\n");
-
-    reconnectMQ();
+    logger.log(" --MQTT: service pending\n");
   }
 }
 
@@ -987,6 +1009,21 @@ void maybePublishEnvToMqtt(
 {
   unsigned long now = millis();
 
+  const bool validTemperature = isfinite(currentTemperature);
+  const bool validHumidity = isfinite(currentHumidity);
+
+  if (!validTemperature)
+  {
+    logger.log(sourceName);
+    logger.log(": current temperature invalid; skipping publish.\n");
+  }
+
+  if (!validHumidity)
+  {
+    logger.log(sourceName);
+    logger.log(": current humidity invalid; skipping publish.\n");
+  }
+
   float tempChange = calculatePercentageChange(previousTemperatureRef, currentTemperature);
   float humidityChange = calculatePercentageChange(previousHumidityRef, currentHumidity);
 
@@ -996,11 +1033,11 @@ void maybePublishEnvToMqtt(
   bool shouldPublishTemp = false;
   bool shouldPublishHum = false;
 
-  if (tempChange >= gConfig.sensors.publishThreshold.temperatureChangePct)
+  if (validTemperature && tempChange >= gConfig.sensors.publishThreshold.temperatureChangePct)
   {
     shouldPublishTemp = true;
   }
-  if (humidityChange >= gConfig.sensors.publishThreshold.humidityChangePct)
+  if (validHumidity && humidityChange >= gConfig.sensors.publishThreshold.humidityChangePct)
   {
     shouldPublishHum = true;
   }
@@ -1023,7 +1060,7 @@ void maybePublishEnvToMqtt(
   logger.log(humidityChange);
   logger.log("\n");
 
-  if (timeSinceLastPublishTemp >= PUBLISH_INTERVAL)
+  if (validTemperature && timeSinceLastPublishTemp >= gConfig.timing.publishIntervalMs)
   {
     shouldPublishTemp = true;
     logger.log(sourceName);
@@ -1033,11 +1070,11 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": time to next temp publish: ");
-    logger.log((PUBLISH_INTERVAL - timeSinceLastPublishTemp) / 1000);
+    logger.log((gConfig.timing.publishIntervalMs - timeSinceLastPublishTemp) / 1000);
     logger.log(" seconds.\n");
   }
 
-  if (timeSinceLastPublishHum >= PUBLISH_INTERVAL)
+  if (validHumidity && timeSinceLastPublishHum >= gConfig.timing.publishIntervalMs)
   {
     shouldPublishHum = true;
     logger.log(sourceName);
@@ -1047,7 +1084,7 @@ void maybePublishEnvToMqtt(
   {
     logger.log(sourceName);
     logger.log(": time to next humidity publish: ");
-    logger.log((PUBLISH_INTERVAL - timeSinceLastPublishHum) / 1000);
+    logger.log((gConfig.timing.publishIntervalMs - timeSinceLastPublishHum) / 1000);
     logger.log(" seconds.\n");
   }
 
@@ -1209,11 +1246,7 @@ void loop()
   {
     // publishSimpleMessage(); // manual test
 
-    if (!mqClient.connected())
-    {
-      reconnectMQ();
-    }
-    mqClient.loop();
+    serviceMqttConnection();
 
     // @anti-pattern as compared to dhtEnabledValue? Maybe this is the bettr way and the dhtEnabledValue was mean for checkbox population? Mar4'25
     if (gConfig.sensors.dht.enabled)

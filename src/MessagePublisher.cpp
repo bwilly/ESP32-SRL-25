@@ -69,6 +69,11 @@ String MessagePublisher::buildTopic(const SensorMetadata &metadata, const char *
 
 // baseName (bn) is the esp device name, independent of sensors it may manage. also referred to as "locationName" 
 void MessagePublisher::publishTemperature(PubSubClient &client, float temperature, const SensorMetadata &metadata, const String &defaultBaseName) {
+    if (!isfinite(temperature)) {
+        logger.log("MQTT temperature invalid; skipping publish!\n");
+        return;
+    }
+
     const size_t capacity = JSON_OBJECT_SIZE(16);
     DynamicJsonDocument doc(capacity);
     const String topic = buildTopic(metadata, TEMPERATURE_TOPIC);
@@ -90,7 +95,7 @@ void MessagePublisher::publishTemperature(PubSubClient &client, float temperatur
 
     if (!client.connected()) {
         logger.log("MQTT client disconnected before publish!");
-  
+        return;
     }
 
     bool ok = client.publish(topic.c_str(), buffer);
@@ -102,6 +107,11 @@ void MessagePublisher::publishTemperature(PubSubClient &client, float temperatur
 }
 
 void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, const SensorMetadata &metadata, const String &defaultBaseName) {
+    if (!isfinite(humidity)) {
+        logger.log("MQTT humidity invalid; skipping publish!\n");
+        return;
+    }
+
     const size_t capacity = JSON_OBJECT_SIZE(16);
     DynamicJsonDocument doc(capacity);
     const String topic = buildTopic(metadata, HUMIDITY_TOPIC);
@@ -123,7 +133,7 @@ void MessagePublisher::publishHumidity(PubSubClient &client, float humidity, con
 
     if (!client.connected()) {
         logger.log("MQTT client disconnected before publish!");
-        // you might want to return here, but I’ll leave behavior same as temp()
+        return;
     }
 
     bool ok = client.publish(topic.c_str(), buffer);
