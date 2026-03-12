@@ -1178,9 +1178,9 @@ void loop()
 
       logger.log(buf);
       logger.handle();
-      logger.flush(16);
+      logger.flush();
       delay(800);
-      ESP.restart();
+      ESP.restart(); // note: logs above do not display before reboot. Mar12'26
     }
     else
     {
