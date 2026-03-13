@@ -51,7 +51,6 @@
 #include "ConfigFetch.h"
 
 #include "esp_log.h"
-#include <WiFiMulti.h>
 #include "ESPmDNS.h"
 
 // #include <DHT_U.h>
@@ -63,6 +62,8 @@
 #include <ElegantOTA.h>
 
 #include <string>
+#include <vector>
+#include <algorithm>
 
 #include <iostream>
 #include <sstream>
@@ -152,7 +153,7 @@ StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 // String version = String(APP_VERSION) + "::" + APP_COMMIT_HASH + ":: TelnetBridge-removed";
 String version = String(APP_VERSION) + "::" +
                  APP_COMMIT_HASH + "::" +
-                 APP_BUILD_DATE + ":: v4: wifi stability, sensor subsystem readiness, topic; wifi timers, json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
+                 APP_BUILD_DATE + ":: v4: wifi stability (scan set), sensor subsystem readiness, topic; wifi timers, json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
 
 // trying to identify cause of unreliable dht22 readings
 
@@ -165,8 +166,6 @@ String version = String(APP_VERSION) + "::" +
 
 WiFiClient espClient;
 PubSubClient mqClient(espClient);
-WiFiMulti wifiMulti;
-static bool wifiMultiConfigured = false;
 
 constexpr unsigned long MQTT_RECONNECT_INITIAL_DELAY_MS = 5000;
 constexpr unsigned long MQTT_RECONNECT_MAX_DELAY_MS = 60000;
@@ -174,9 +173,8 @@ constexpr unsigned long MQTT_RECONNECT_MAX_DELAY_MS = 60000;
 unsigned long mqttReconnectDelayMs = MQTT_RECONNECT_INITIAL_DELAY_MS;
 unsigned long nextMqttReconnectAtMs = 0;
 
-constexpr unsigned long WIFI_MULTI_RUN_INTERVAL_MS = 4000;
-constexpr unsigned long WIFI_MULTI_CONNECT_TIMEOUT_MS = 12000;
 constexpr unsigned long WIFI_DIAG_INTERVAL_MS = 2000;
+constexpr unsigned long WIFI_PER_BSSID_CONNECT_TIMEOUT_MS = 12000;
 
 // DNS settings
 IPAddress primaryDNS(10, 27, 1, 30); // Your Raspberry Pi's IP (DNS server) mar'25: why is this here? is it doing anything
@@ -267,7 +265,18 @@ void setupStationMode();
 void setupAccessPointMode();
 static void resetSensorRuntimeState();
 static const char *wifiStatusToString(wl_status_t status);
-static int logVisibleWifiCandidates(const char *targetSsid);
+struct WifiCandidate
+{
+  String ssid;
+  int32_t rssi;
+  uint8_t bssid[6];
+  int32_t channel;
+  uint8_t encryptionType;
+};
+static String formatBssid(const uint8_t bssid[6]);
+static std::vector<WifiCandidate> scanWifiCandidates(const char *targetSsid);
+static bool beginConnectionToCandidate(const WifiCandidate &candidate, const std::string &pass);
+static wl_status_t waitForWifiConnection(unsigned long timeoutMs);
 
 void onOTAEnd(bool success)
 {
@@ -437,68 +446,82 @@ bool initWiFi()
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
   WiFi.scanDelete();
 
-  const int matches = logVisibleWifiCandidates(ssid.c_str());
-  if (matches == 0)
-  {
-    Serial.println("s:Target SSID not visible in scan.");
-  }
+  Serial.println("s:Connecting to Wi-Fi; trying visible mesh nodes by RSSI...");
 
-  // Add Wi-Fi networks to WiFiMulti
-  if (!wifiMultiConfigured)
-  {
-    wifiMulti.addAP(ssid.c_str(), pass.c_str());
-    wifiMultiConfigured = true;
-  }
-
-  Serial.println("s:Connecting to Wi-Fi; looking for the strongest mesh node...");
-
-  // Start the connection attempt
-  unsigned long startAttemptTime = millis();
-  unsigned long lastRunAt = 0;
+  const unsigned long startAttemptTime = millis();
   unsigned long lastDiagAt = 0;
   wl_status_t status = WiFi.status();
 
   while (status != WL_CONNECTED)
   {
-    unsigned long currentMillis = millis();
+    const unsigned long currentMillis = millis();
     if (currentMillis - startAttemptTime >= WIFI_CONNECT_INTERVAL)
     {
       Serial.println("s:Failed to connect after interval timeout.");
       return false;
     }
 
-    if (lastRunAt == 0 || currentMillis - lastRunAt >= WIFI_MULTI_RUN_INTERVAL_MS)
+    std::vector<WifiCandidate> candidates = scanWifiCandidates(ssid.c_str());
+    if (candidates.empty())
     {
-      status = static_cast<wl_status_t>(wifiMulti.run(WIFI_MULTI_CONNECT_TIMEOUT_MS));
-      lastRunAt = millis();
-    }
-    else
-    {
+      Serial.println("s:Target SSID not visible in scan.");
+      delay(1000);
       status = WiFi.status();
+      continue;
     }
 
-    if (status == WL_CONNECTED)
+    for (size_t i = 0; i < candidates.size() && status != WL_CONNECTED; ++i)
     {
-      break;
+      const WifiCandidate &candidate = candidates[i];
+      Serial.print("s:Attempting mesh node ");
+      Serial.print(i + 1);
+      Serial.print("/");
+      Serial.print(candidates.size());
+      Serial.print(" BSSID=");
+      Serial.print(formatBssid(candidate.bssid));
+      Serial.print(" RSSI=");
+      Serial.print(candidate.rssi);
+      Serial.print(" channel=");
+      Serial.println(candidate.channel);
+
+      if (!beginConnectionToCandidate(candidate, pass))
+      {
+        status = WL_CONNECT_FAILED;
+      }
+      else
+      {
+        status = waitForWifiConnection(WIFI_PER_BSSID_CONNECT_TIMEOUT_MS);
+      }
+
+      if (status == WL_CONNECTED)
+      {
+        break;
+      }
+
+      if (lastDiagAt == 0 || millis() - lastDiagAt >= WIFI_DIAG_INTERVAL_MS)
+      {
+        Serial.print("s:WiFi status=");
+        Serial.print(wifiStatusToString(status));
+        Serial.print(" (");
+        Serial.print(status);
+        Serial.println(")");
+        Serial.print("Last SSID attempted: ");
+        Serial.println(WiFi.SSID());
+        Serial.print("Last BSSID attempted: ");
+        Serial.println(WiFi.BSSIDstr());
+        Serial.print("Signal strength (RSSI): ");
+        Serial.println(WiFi.RSSI());
+        lastDiagAt = millis();
+      }
+
+      WiFi.disconnect(false, false);
+      delay(250);
     }
 
-    if (lastDiagAt == 0 || currentMillis - lastDiagAt >= WIFI_DIAG_INTERVAL_MS)
+    if (status != WL_CONNECTED)
     {
-      Serial.print("s:WiFi status=");
-      Serial.print(wifiStatusToString(status));
-      Serial.print(" (");
-      Serial.print(status);
-      Serial.println(")");
-      Serial.print("Last SSID attempted: ");
-      Serial.println(WiFi.SSID());
-      Serial.print("Last BSSID attempted: ");
-      Serial.println(WiFi.BSSIDstr());
-      Serial.print("Signal strength (RSSI): ");
-      Serial.println(WiFi.RSSI());
-      lastDiagAt = currentMillis;
+      Serial.println("s:Exhausted current scan results; rescanning mesh nodes...");
     }
-
-    delay(250);
   }
 
   // Successful connection
@@ -537,28 +560,90 @@ static const char *wifiStatusToString(wl_status_t status)
   }
 }
 
-static int logVisibleWifiCandidates(const char *targetSsid)
+static String formatBssid(const uint8_t bssid[6])
+{
+  char formatted[18];
+  snprintf(formatted,
+           sizeof(formatted),
+           "%02X:%02X:%02X:%02X:%02X:%02X",
+           bssid[0],
+           bssid[1],
+           bssid[2],
+           bssid[3],
+           bssid[4],
+           bssid[5]);
+  return String(formatted);
+}
+
+static std::vector<WifiCandidate> scanWifiCandidates(const char *targetSsid)
 {
   const int networkCount = WiFi.scanNetworks();
-  int matchingCount = 0;
+  std::vector<WifiCandidate> candidates;
 
   Serial.println("s:Scan complete");
   for (int i = 0; i < networkCount; ++i)
   {
-    Serial.print("SSID: ");
-    Serial.print(WiFi.SSID(i));
-    Serial.print(", RSSI: ");
-    Serial.println(WiFi.RSSI(i));
+    String ssidScan;
+    int32_t rssiScan;
+    uint8_t encryptionType;
+    uint8_t *bssidScan;
+    int32_t channelScan;
 
-    if (WiFi.SSID(i) == targetSsid)
+    WiFi.getNetworkInfo(i, ssidScan, encryptionType, rssiScan, bssidScan, channelScan);
+
+    Serial.print("SSID: ");
+    Serial.print(ssidScan);
+    Serial.print(", RSSI: ");
+    Serial.println(rssiScan);
+
+    if (ssidScan != targetSsid || bssidScan == nullptr)
     {
-      ++matchingCount;
+      continue;
     }
+
+    WifiCandidate candidate;
+    candidate.ssid = ssidScan;
+    candidate.rssi = rssiScan;
+    candidate.channel = channelScan;
+    candidate.encryptionType = encryptionType;
+    memcpy(candidate.bssid, bssidScan, sizeof(candidate.bssid));
+    candidates.push_back(candidate);
   }
 
+  std::sort(candidates.begin(), candidates.end(), [](const WifiCandidate &lhs, const WifiCandidate &rhs) {
+    return lhs.rssi > rhs.rssi;
+  });
+
   Serial.print("s:Visible target BSSIDs: ");
-  Serial.println(matchingCount);
-  return matchingCount;
+  Serial.println(candidates.size());
+  WiFi.scanDelete();
+
+  return candidates;
+}
+
+static bool beginConnectionToCandidate(const WifiCandidate &candidate, const std::string &pass)
+{
+  WiFi.disconnect(false, false);
+  delay(50);
+  WiFi.begin(candidate.ssid.c_str(), pass.c_str(), candidate.channel, candidate.bssid);
+  return true;
+}
+
+static wl_status_t waitForWifiConnection(unsigned long timeoutMs)
+{
+  const unsigned long startTime = millis();
+  wl_status_t status = static_cast<wl_status_t>(WiFi.status());
+
+  while (status != WL_CONNECTED &&
+         status != WL_NO_SSID_AVAIL &&
+         status != WL_CONNECT_FAILED &&
+         (millis() - startTime) <= timeoutMs)
+  {
+    delay(10);
+    status = static_cast<wl_status_t>(WiFi.status());
+  }
+
+  return status;
 }
 
 void AdvertiseServices()
