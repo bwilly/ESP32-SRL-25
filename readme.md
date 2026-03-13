@@ -45,6 +45,8 @@ curl -i -X POST \
 ### Upload Firmware to Host
 
 scp firmware.bin bwilly@salt-r420:~
+or
+scp firmware.bin bwilly@salt-r420:~/config-repo/esp-config/salt/v4
 
 ### Move Firmware into Web-Served Repo (salt-r420)
 
