@@ -173,8 +173,9 @@ constexpr unsigned long MQTT_RECONNECT_MAX_DELAY_MS = 60000;
 unsigned long mqttReconnectDelayMs = MQTT_RECONNECT_INITIAL_DELAY_MS;
 unsigned long nextMqttReconnectAtMs = 0;
 
-constexpr unsigned long WIFI_DIAG_INTERVAL_MS = 2000;
 constexpr unsigned long WIFI_PER_BSSID_CONNECT_TIMEOUT_MS = 12000;
+constexpr unsigned long WIFI_STATUS_POLL_INTERVAL_MS = 200;
+constexpr uint8_t WIFI_CONNECT_FAILED_GRACE_POLLS = 15; // Keep polling after an initial connect_failed; some joins still succeed shortly after.
 
 // DNS settings
 IPAddress primaryDNS(10, 27, 1, 30); // Your Raspberry Pi's IP (DNS server) mar'25: why is this here? is it doing anything
@@ -265,6 +266,7 @@ void setupStationMode();
 void setupAccessPointMode();
 static void resetSensorRuntimeState();
 static const char *wifiStatusToString(wl_status_t status);
+static const char *wifiAuthModeToString(uint8_t encryptionType);
 struct WifiCandidate
 {
   String ssid;
@@ -449,7 +451,6 @@ bool initWiFi()
   Serial.println("s:Connecting to Wi-Fi; trying visible mesh nodes by RSSI...");
 
   const unsigned long startAttemptTime = millis();
-  unsigned long lastDiagAt = 0;
   wl_status_t status = WiFi.status();
 
   while (status != WL_CONNECTED)
@@ -479,10 +480,16 @@ bool initWiFi()
       Serial.print(candidates.size());
       Serial.print(" BSSID=");
       Serial.print(formatBssid(candidate.bssid));
+      Serial.print(" SSID=");
+      Serial.print(candidate.ssid);
+      Serial.print(" PASS=");
+      Serial.print(pass.c_str());
       Serial.print(" RSSI=");
       Serial.print(candidate.rssi);
       Serial.print(" channel=");
-      Serial.println(candidate.channel);
+      Serial.print(candidate.channel);
+      Serial.print(" auth=");
+      Serial.println(wifiAuthModeToString(candidate.encryptionType));
 
       if (!beginConnectionToCandidate(candidate, pass))
       {
@@ -498,24 +505,26 @@ bool initWiFi()
         break;
       }
 
-      if (lastDiagAt == 0 || millis() - lastDiagAt >= WIFI_DIAG_INTERVAL_MS)
-      {
-        Serial.print("s:WiFi status=");
-        Serial.print(wifiStatusToString(status));
-        Serial.print(" (");
-        Serial.print(status);
-        Serial.println(")");
-        Serial.print("Last SSID attempted: ");
-        Serial.println(WiFi.SSID());
-        Serial.print("Last BSSID attempted: ");
-        Serial.println(WiFi.BSSIDstr());
-        Serial.print("Signal strength (RSSI): ");
-        Serial.println(WiFi.RSSI());
-        lastDiagAt = millis();
-      }
+      Serial.print("s:WiFi status=");
+      Serial.print(wifiStatusToString(status));
+      Serial.print(" (");
+      Serial.print(status);
+      Serial.println(")");
+      Serial.print("Attempted SSID: ");
+      Serial.println(candidate.ssid);
+      Serial.print("Attempted password: ");
+      Serial.println(pass.c_str());
+      Serial.print("Attempted BSSID: ");
+      Serial.println(formatBssid(candidate.bssid));
+      Serial.print("Attempted channel: ");
+      Serial.println(candidate.channel);
+      Serial.print("Attempted RSSI: ");
+      Serial.println(candidate.rssi);
+      Serial.print("Attempted auth mode: ");
+      Serial.println(wifiAuthModeToString(candidate.encryptionType));
 
       WiFi.disconnect(false, false);
-      delay(250);
+      delay(500);
     }
 
     if (status != WL_CONNECTED)
@@ -555,6 +564,33 @@ static const char *wifiStatusToString(wl_status_t status)
     return "connection_lost";
   case WL_DISCONNECTED:
     return "disconnected";
+  default:
+    return "unknown";
+  }
+}
+
+static const char *wifiAuthModeToString(uint8_t encryptionType)
+{
+  switch (encryptionType)
+  {
+  case WIFI_AUTH_OPEN:
+    return "open";
+  case WIFI_AUTH_WEP:
+    return "wep";
+  case WIFI_AUTH_WPA_PSK:
+    return "wpa_psk";
+  case WIFI_AUTH_WPA2_PSK:
+    return "wpa2_psk";
+  case WIFI_AUTH_WPA_WPA2_PSK:
+    return "wpa_wpa2_psk";
+  case WIFI_AUTH_WPA2_ENTERPRISE:
+    return "wpa2_enterprise";
+  case WIFI_AUTH_WPA3_PSK:
+    return "wpa3_psk";
+  case WIFI_AUTH_WPA2_WPA3_PSK:
+    return "wpa2_wpa3_psk";
+  case WIFI_AUTH_WAPI_PSK:
+    return "wapi_psk";
   default:
     return "unknown";
   }
@@ -633,14 +669,31 @@ static wl_status_t waitForWifiConnection(unsigned long timeoutMs)
 {
   const unsigned long startTime = millis();
   wl_status_t status = static_cast<wl_status_t>(WiFi.status());
+  uint8_t connectFailedPolls = 0;
 
-  while (status != WL_CONNECTED &&
-         status != WL_NO_SSID_AVAIL &&
-         status != WL_CONNECT_FAILED &&
-         (millis() - startTime) <= timeoutMs)
+  while ((millis() - startTime) <= timeoutMs)
   {
-    delay(10);
     status = static_cast<wl_status_t>(WiFi.status());
+
+    if (status == WL_CONNECTED || status == WL_NO_SSID_AVAIL)
+    {
+      break;
+    }
+
+    if (status == WL_CONNECT_FAILED)
+    {
+      ++connectFailedPolls;
+      if (connectFailedPolls >= WIFI_CONNECT_FAILED_GRACE_POLLS)
+      {
+        break;
+      }
+    }
+    else
+    {
+      connectFailedPolls = 0;
+    }
+
+    delay(WIFI_STATUS_POLL_INTERVAL_MS);
   }
 
   return status;
