@@ -4,4 +4,4 @@
 // Function declarations
 float readDHTTemperature();
 float readDHTHumidity();
-void initSensorTask(int dhtPin);
+bool initSensorTask(int dhtPin);

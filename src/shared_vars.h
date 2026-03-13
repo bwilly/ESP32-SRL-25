@@ -51,6 +51,24 @@ extern volatile bool g_bootstrapPending;
 extern String g_bootstrapBody;
 extern String g_bootstrapErr;
 
+struct SensorRuntimeState
+{
+    bool subsystemStarted = false;
+    bool dhtReady = false;
+    bool chtReady = false;
+    bool w1Ready = false;
+    bool acsReady = false;
+    bool sctReady = false;
+};
+
+struct RuntimeState
+{
+    bool isFallbackApMode = false;
+    SensorRuntimeState sensors;
+};
+
+extern RuntimeState gRuntime;
+
 // Path for the on-disk effective config cache
 extern const char* FNAME_CONFIGREMOTE;
 extern const char* FNAME_CONFIG;

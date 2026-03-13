@@ -25,7 +25,7 @@ static int gDhtPin = -1;  // -1 = unset
 void configDHT();
 float roundToHundredth(float number);
 void sensorTask(void *parameter);
-void initSensorTask();
+bool initSensorTask(int dhtPin);
 
 void configDHT()
 {
@@ -97,7 +97,7 @@ void sensorTask(void *parameter)
     }
 }
 
-void initSensorTask(int dhtPin)
+bool initSensorTask(int dhtPin)
 {
     gDhtPin = dhtPin;
 
@@ -105,6 +105,7 @@ void initSensorTask(int dhtPin)
     if (xSensorDataMutex == NULL)
     {
         logger.log("Mutex creation failed!\n");
+        return false;
     }
 
     xTaskCreatePinnedToCore(
@@ -120,7 +121,10 @@ void initSensorTask(int dhtPin)
     if (sensorTaskHandle == NULL)
     {
         logger.log("Failed to create sensor task!\n");
+        return false;
     }
+
+    return true;
 }
 
 

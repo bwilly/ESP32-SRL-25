@@ -130,11 +130,10 @@ constexpr const char *AP_PASSWORD = "saltmeadow"; // >= 8 chars
 // Timer variables
 #define AP_REBOOT_TIMEOUT 300000 // 5 minutes in milliseconds
 unsigned long reconnect_delay = 900000; // 15-minute delay before rebooting after STA disconnect
-const long WIFI_CONNECT_INTERVAL = 40000; // interval to wait for Wi-Fi connection (milliseconds)
+const long WIFI_CONNECT_INTERVAL = 90000; // interval to wait for Wi-Fi connection (milliseconds)
 unsigned long apStartTime = 0;   // Variable to track the start time in fallback AP mode
 unsigned long previousMillis = 0;
 unsigned long staDisconnectStartTime = 0;
-bool isFallbackApMode = false;
 
 
 static bool lastPumpState = false; // Assume OFF at startup
@@ -167,12 +166,17 @@ String version = String(APP_VERSION) + "::" +
 WiFiClient espClient;
 PubSubClient mqClient(espClient);
 WiFiMulti wifiMulti;
+static bool wifiMultiConfigured = false;
 
 constexpr unsigned long MQTT_RECONNECT_INITIAL_DELAY_MS = 5000;
 constexpr unsigned long MQTT_RECONNECT_MAX_DELAY_MS = 60000;
 
 unsigned long mqttReconnectDelayMs = MQTT_RECONNECT_INITIAL_DELAY_MS;
 unsigned long nextMqttReconnectAtMs = 0;
+
+constexpr unsigned long WIFI_MULTI_RUN_INTERVAL_MS = 4000;
+constexpr unsigned long WIFI_MULTI_CONNECT_TIMEOUT_MS = 12000;
+constexpr unsigned long WIFI_DIAG_INTERVAL_MS = 2000;
 
 // DNS settings
 IPAddress primaryDNS(10, 27, 1, 30); // Your Raspberry Pi's IP (DNS server) mar'25: why is this here? is it doing anything
@@ -261,6 +265,9 @@ String ledState;
 void loadBootstrapConfig();
 void setupStationMode();
 void setupAccessPointMode();
+static void resetSensorRuntimeState();
+static const char *wifiStatusToString(wl_status_t status);
+static int logVisibleWifiCandidates(const char *targetSsid);
 
 void onOTAEnd(bool success)
 {
@@ -409,8 +416,13 @@ bool initWiFi()
 
   Serial.println("s:Setting WiFi to WIFI_STA...");
 
-  WiFi.disconnect(true);
-  // delay(180);
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.disconnect(false, true);
+  delay(250);
+
   // Set custom hostname
   if (!WiFi.setHostname(gIdentity.name()))
   {
@@ -421,63 +433,76 @@ bool initWiFi()
     Serial.print("s:Setting DNS hostname to: ");
     Serial.println(gIdentity.name());
   }
-  WiFi.mode(WIFI_STA);
 
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+  WiFi.scanDelete();
 
-  // WiFi.begin(ssid.c_str(), pass.c_str());
-
-  int n = WiFi.scanNetworks();
-  Serial.println("s:Scan complete");
-  for (int i = 0; i < n; ++i)
+  const int matches = logVisibleWifiCandidates(ssid.c_str());
+  if (matches == 0)
   {
-    Serial.print("SSID: ");
-    Serial.print(WiFi.SSID(i));
-    Serial.print(", RSSI: ");
-    Serial.println(WiFi.RSSI(i));
+    Serial.println("s:Target SSID not visible in scan.");
   }
 
   // Add Wi-Fi networks to WiFiMulti
-  wifiMulti.addAP(ssid.c_str(), pass.c_str());
+  if (!wifiMultiConfigured)
+  {
+    wifiMulti.addAP(ssid.c_str(), pass.c_str());
+    wifiMultiConfigured = true;
+  }
 
   Serial.println("s:Connecting to Wi-Fi; looking for the strongest mesh node...");
 
   // Start the connection attempt
   unsigned long startAttemptTime = millis();
-  while (wifiMulti.run() != WL_CONNECTED)
-  {
-    // Additional diagnostics
-    Serial.print("Last SSID attempted: ");
-    Serial.println(WiFi.SSID());
-    Serial.print("Last BSSID attempted: ");
-    Serial.println(WiFi.BSSIDstr());
-    Serial.print("Signal strength (RSSI): ");
-    Serial.println(WiFi.RSSI());
-    Serial.print("Connection status: ");
-    Serial.println(WiFi.status());
+  unsigned long lastRunAt = 0;
+  unsigned long lastDiagAt = 0;
+  wl_status_t status = WiFi.status();
 
+  while (status != WL_CONNECTED)
+  {
     unsigned long currentMillis = millis();
     if (currentMillis - startAttemptTime >= WIFI_CONNECT_INTERVAL)
     {
       Serial.println("s:Failed to connect after interval timeout.");
-
-      // Note: WiFi.reasonCode() can provide additional reason if available
-      // if (WiFi.status() != WL_CONNECTED)
-      // {
-      //   Serial.println("WiFi did not connect.");
-      // }
-
       return false;
     }
-    Serial.print(".");
-    // WiFi.disconnect(true);
-    delay(500); // Shorter delay to show progress
 
-    // WiFi.reconnect();
+    if (lastRunAt == 0 || currentMillis - lastRunAt >= WIFI_MULTI_RUN_INTERVAL_MS)
+    {
+      status = static_cast<wl_status_t>(wifiMulti.run(WIFI_MULTI_CONNECT_TIMEOUT_MS));
+      lastRunAt = millis();
+    }
+    else
+    {
+      status = WiFi.status();
+    }
+
+    if (status == WL_CONNECTED)
+    {
+      break;
+    }
+
+    if (lastDiagAt == 0 || currentMillis - lastDiagAt >= WIFI_DIAG_INTERVAL_MS)
+    {
+      Serial.print("s:WiFi status=");
+      Serial.print(wifiStatusToString(status));
+      Serial.print(" (");
+      Serial.print(status);
+      Serial.println(")");
+      Serial.print("Last SSID attempted: ");
+      Serial.println(WiFi.SSID());
+      Serial.print("Last BSSID attempted: ");
+      Serial.println(WiFi.BSSIDstr());
+      Serial.print("Signal strength (RSSI): ");
+      Serial.println(WiFi.RSSI());
+      lastDiagAt = currentMillis;
+    }
+
+    delay(250);
   }
 
   // Successful connection
-  isFallbackApMode = false;
+  gRuntime.isFallbackApMode = false;
   staDisconnectStartTime = 0;
 
   Serial.println("\ns:WiFi connected");
@@ -487,6 +512,53 @@ bool initWiFi()
   Serial.println(WiFi.BSSIDstr());
 
   return true;
+}
+
+static const char *wifiStatusToString(wl_status_t status)
+{
+  switch (status)
+  {
+  case WL_IDLE_STATUS:
+    return "idle";
+  case WL_NO_SSID_AVAIL:
+    return "no_ssid";
+  case WL_SCAN_COMPLETED:
+    return "scan_completed";
+  case WL_CONNECTED:
+    return "connected";
+  case WL_CONNECT_FAILED:
+    return "connect_failed";
+  case WL_CONNECTION_LOST:
+    return "connection_lost";
+  case WL_DISCONNECTED:
+    return "disconnected";
+  default:
+    return "unknown";
+  }
+}
+
+static int logVisibleWifiCandidates(const char *targetSsid)
+{
+  const int networkCount = WiFi.scanNetworks();
+  int matchingCount = 0;
+
+  Serial.println("s:Scan complete");
+  for (int i = 0; i < networkCount; ++i)
+  {
+    Serial.print("SSID: ");
+    Serial.print(WiFi.SSID(i));
+    Serial.print(", RSSI: ");
+    Serial.println(WiFi.RSSI(i));
+
+    if (WiFi.SSID(i) == targetSsid)
+    {
+      ++matchingCount;
+    }
+  }
+
+  Serial.print("s:Visible target BSSIDs: ");
+  Serial.println(matchingCount);
+  return matchingCount;
 }
 
 void AdvertiseServices()
@@ -741,8 +813,10 @@ void loadBootstrapConfig()
 
 void setupStationMode()
 {
-  isFallbackApMode = false;
+  gRuntime.isFallbackApMode = false;
   staDisconnectStartTime = 0;
+  resetSensorRuntimeState();
+  gRuntime.sensors.subsystemStarted = true;
 
   // setup: path1 (Station Mode)
   // todo: configUrl and locationName should come from gConfig boot values
@@ -808,12 +882,19 @@ void setupStationMode()
   if (gConfig.sensors.dht.enabled)
   {
     logger.log("DHT: enabled via gConfig, starting sensor task\n");
-    initSensorTask(gConfig.sensors.dht.pin);
+    gRuntime.sensors.dhtReady = initSensorTask(gConfig.sensors.dht.pin);
   }
 
   if (gConfig.sensors.acs.enabled)
   {
     setupACS712();
+    gRuntime.sensors.acsReady = true;
+  }
+
+  if (gConfig.sensors.w1.enabled)
+  {
+    setupDS18b20();
+    gRuntime.sensors.w1Ready = true;
   }
 
   // I2C pins for CHT832x
@@ -822,12 +903,14 @@ void setupStationMode()
   if (gConfig.sensors.cht.enabled)
   {
     envSensor.begin();
+    gRuntime.sensors.chtReady = true;
   }
 
   if (gConfig.sensors.sct.enabled)
   {
     sctSensor = SctSensor(gConfig.sensors.sct.pin, gConfig.sensors.sct.ratedAmps);
     sctSensor.begin();
+    gRuntime.sensors.sctReady = true;
   }
 
   registerWebRoutesStation(server, gConfig);
@@ -876,11 +959,13 @@ void setupAccessPointMode()
   // SETUP : Path2
   // This path is meant to run only upon initial one-time setup
 
-  isFallbackApMode = true;
+  gRuntime.isFallbackApMode = true;
   apStartTime = millis(); // Record the start time in AP mode
   staDisconnectStartTime = 0;
+  resetSensorRuntimeState();
 
   Serial.println("s:Setting AP (Access Point)");
+  WiFi.mode(WIFI_AP);
 
   // Build base SSID (without prefix)
   std::string base;
@@ -969,6 +1054,11 @@ void serviceMqttConnection()
   mqttReconnectDelayMs = min(mqttReconnectDelayMs * 2, MQTT_RECONNECT_MAX_DELAY_MS);
 }
 
+static void resetSensorRuntimeState()
+{
+  gRuntime.sensors = SensorRuntimeState{};
+}
+
 void publishSimpleMessage()
 {
   // Define the message and topic
@@ -1000,7 +1090,12 @@ void publishSimpleMessage()
 // Helper function to calculate percentage change
 float calculatePercentageChange(float oldValue, float newValue)
 {
-  if (isnan(oldValue) || oldValue == 0.0f)
+  if (!isfinite(newValue))
+  {
+    return NAN;
+  }
+
+  if (!isfinite(oldValue) || oldValue == 0.0f)
   {
     return 100.0f; // Return 100% if old value is NaN or 0 to force an update
   }
@@ -1052,23 +1147,39 @@ void maybePublishEnvToMqtt(
     shouldPublishHum = true;
   }
 
-  logger.log(sourceName);
-  logger.log(" Temperature changed from ");
-  logger.log(previousTemperatureRef);
-  logger.log(" to ");
-  logger.log(currentTemperature);
-  logger.log(". Percentage change: ");
-  logger.log(tempChange);
-  logger.log("\n");
+  if (validTemperature)
+  {
+    logger.log(sourceName);
+    logger.log(" Temperature changed from ");
+    logger.log(previousTemperatureRef);
+    logger.log(" to ");
+    logger.log(currentTemperature);
+    logger.log(". Percentage change: ");
+    logger.log(tempChange);
+    logger.log("\n");
+  }
+  else
+  {
+    logger.log(sourceName);
+    logger.log(" Temperature change unavailable because the current reading is invalid.\n");
+  }
 
-  logger.log(sourceName);
-  logger.log(" Humidity changed from ");
-  logger.log(previousHumidityRef);
-  logger.log(" to ");
-  logger.log(currentHumidity);
-  logger.log(". Percentage change: ");
-  logger.log(humidityChange);
-  logger.log("\n");
+  if (validHumidity)
+  {
+    logger.log(sourceName);
+    logger.log(" Humidity changed from ");
+    logger.log(previousHumidityRef);
+    logger.log(" to ");
+    logger.log(currentHumidity);
+    logger.log(". Percentage change: ");
+    logger.log(humidityChange);
+    logger.log("\n");
+  }
+  else
+  {
+    logger.log(sourceName);
+    logger.log(" Humidity change unavailable because the current reading is invalid.\n");
+  }
 
   if (validTemperature && timeSinceLastPublishTemp >= gConfig.timing.publishIntervalMs)
   {
@@ -1204,7 +1315,7 @@ void loop()
   }
 
   // Reboot if the device has been left in fallback AP mode too long.
-  if (isFallbackApMode)
+  if (gRuntime.isFallbackApMode)
   {
     if (currentMillis - apStartTime >= AP_REBOOT_TIMEOUT)
     {
@@ -1220,7 +1331,7 @@ void loop()
   // does this need to be here? I didn't use it, here, on the new master project. maybe it was only needed for the non-async web server? bwilly Feb26'23
   // server.handleClient();
 
-  if (!isFallbackApMode)
+  if (!gRuntime.isFallbackApMode)
   {
     if (WiFi.status() == WL_CONNECTED)
     {
@@ -1268,7 +1379,7 @@ void loop()
     serviceMqttConnection();
 
     // @anti-pattern as compared to dhtEnabledValue? Maybe this is the bettr way and the dhtEnabledValue was mean for checkbox population? Mar4'25
-    if (gConfig.sensors.dht.enabled)
+    if (gConfig.sensors.dht.enabled && gRuntime.sensors.dhtReady)
     {
       float currentTemperature = readDHTTemperature();
       float currentHumidity = readDHTHumidity();
@@ -1285,7 +1396,7 @@ void loop()
     }
 
     // Dec3'25
-    if (gConfig.sensors.cht.enabled)
+    if (gConfig.sensors.cht.enabled && gRuntime.sensors.chtReady)
     {
       float chtTemp = NAN;
       float chtHum = NAN;
@@ -1308,7 +1419,7 @@ void loop()
       }
     }
 
-    if (gConfig.sensors.sct.enabled)
+    if (gConfig.sensors.sct.enabled && gRuntime.sensors.sctReady)
     {
       float amps = sctSensor.readCurrentACRms();
       logger.logf("iot.sct.current %.3fA pin=%d rated=%.0f\n",
@@ -1317,7 +1428,7 @@ void loop()
     }
   }
 
-  if (gConfig.sensors.sct.enabled)
+  if (gConfig.sensors.sct.enabled && gRuntime.sensors.sctReady)
   {
     float amps = fabsf(sctSensor.readCurrentACRms());
 
@@ -1336,7 +1447,7 @@ void loop()
     }
   }
 
-  if (gConfig.sensors.w1.enabled)
+  if (gConfig.sensors.w1.enabled && gRuntime.sensors.w1Ready)
   {
     temptSensor.requestTemperatures();
     TemperatureReading *readings = temptSensor.getTemperatureReadings(gConfig.sensors.w1); // todo:performance: move declaration outside of the esp loop
@@ -1358,7 +1469,7 @@ void loop()
     }
   }
 
-  if (gConfig.sensors.acs.enabled)
+  if (gConfig.sensors.acs.enabled && gRuntime.sensors.acsReady)
   {
     float amps = fabs(readACS712Current());
     logger.log(amps);

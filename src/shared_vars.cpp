@@ -8,6 +8,7 @@
 #include "shared_vars.h"
 
 DeviceIdentity gIdentity;
+RuntimeState gRuntime;
 
 
 volatile bool g_bootstrapPending = false;
