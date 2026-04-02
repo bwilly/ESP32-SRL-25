@@ -60,7 +60,19 @@ bool parseW1Address(const std::string &src, DeviceAddress out)
 }
 } // namespace
 
-TemperatureSensor::TemperatureSensor(OneWire *oneWire) : sensors(oneWire) {}
+TemperatureSensor::TemperatureSensor() : sensors() {}
+
+bool TemperatureSensor::begin(int oneWirePin)
+{
+    if (oneWirePin <= 0)
+    {
+        return false;
+    }
+
+    oneWire.begin(static_cast<uint8_t>(oneWirePin));
+    sensors.setOneWire(&oneWire);
+    return true;
+}
 
 void TemperatureSensor::requestTemperatures()
 {

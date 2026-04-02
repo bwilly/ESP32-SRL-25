@@ -218,18 +218,7 @@ static bool sctLastPumpState = false;
 SctSensor sctSensor(32, 15.0f);
 
 // DS18b20
-// Data wire is plugged into port 15 on the ESP32
-#define ONE_WIRE_BUS 23 // todo: externalize Nov20-24
-
-// // Setup a oneWire instance to communicate with any OneWire devices
-// OneWire oneWire(ONE_WIRE_BUS);
-
-// // Pass our oneWire reference to Dallas Temperature.
-// DallasTemperature sensors(&oneWire);
-
-OneWire oneWire(ONE_WIRE_BUS); // todo:externalize I/O port nov'24
-// Create a TemperatureSensor instance
-TemperatureSensor temptSensor(&oneWire); // Dallas
+TemperatureSensor temptSensor; // Dallas
 
 // uint8_t w1[3][8] = {
 //     {0x28, 0xa0, 0x7b, 0x49, 0xf6, 0xde, 0x3c, 0xe9},
@@ -1031,8 +1020,15 @@ void setupStationMode()
 
   if (gConfig.sensors.w1.enabled)
   {
-    setupDS18b20();
-    gRuntime.sensors.w1Ready = true;
+    if (temptSensor.begin(gConfig.sensors.w1.pin))
+    {
+      setupDS18b20();
+      gRuntime.sensors.w1Ready = true;
+    }
+    else
+    {
+      logger.log("W1: enabled but invalid pin in gConfig.sensors.w1.pin; skipping init\n");
+    }
   }
 
   // I2C pins for CHT832x
