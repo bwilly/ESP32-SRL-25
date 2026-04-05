@@ -127,15 +127,13 @@ constexpr const char *AP_PASSWORD = "saltmeadow"; // >= 8 chars
 #define SERVICE_PORT 80
 // #define LOCATION "SandBBedroom"
 
-
 // Timer variables
-#define AP_REBOOT_TIMEOUT 300000 // 5 minutes in milliseconds
-unsigned long reconnect_delay = 900000; // 15-minute delay before rebooting after STA disconnect
+#define AP_REBOOT_TIMEOUT 300000          // 5 minutes in milliseconds
+unsigned long reconnect_delay = 900000;   // 15-minute delay before rebooting after STA disconnect
 const long WIFI_CONNECT_INTERVAL = 90000; // interval to wait for Wi-Fi connection (milliseconds)
-unsigned long apStartTime = 0;   // Variable to track the start time in fallback AP mode
+unsigned long apStartTime = 0;            // Variable to track the start time in fallback AP mode
 unsigned long previousMillis = 0;
 unsigned long staDisconnectStartTime = 0;
-
 
 static bool lastPumpState = false; // Assume OFF at startup
 static bool firstRun = true;       // New flag to force first publish
@@ -240,8 +238,6 @@ AsyncWebServer zabbixServer(10050);
 // IPAddress localGateway;
 // IPAddress localGateway(192, 168, 1, 1); //hardcoded
 // IPAddress subnet(255, 255, 0, 0);
-
-
 
 // Set LED GPIO
 const int ledPin = 2;
@@ -635,9 +631,8 @@ static std::vector<WifiCandidate> scanWifiCandidates(const char *targetSsid)
     candidates.push_back(candidate);
   }
 
-  std::sort(candidates.begin(), candidates.end(), [](const WifiCandidate &lhs, const WifiCandidate &rhs) {
-    return lhs.rssi > rhs.rssi;
-  });
+  std::sort(candidates.begin(), candidates.end(), [](const WifiCandidate &lhs, const WifiCandidate &rhs)
+            { return lhs.rssi > rhs.rssi; });
 
   Serial.print("s:Visible target BSSIDs: ");
   Serial.println(candidates.size());
@@ -1382,13 +1377,12 @@ void loop()
   const unsigned long mainIntervalMs =
       gConfig.timing.mainDelayMs < 500 ? 3000 : static_cast<unsigned long>(gConfig.timing.mainDelayMs);
 
-  if(currentMillis - g_lastMainRunMs < mainIntervalMs)
+  if (currentMillis - g_lastMainRunMs < mainIntervalMs)
   {
     // Not time to run main loop logic yet
     return;
   }
   g_lastMainRunMs = currentMillis;
-
 
   logger.handle();
   logger.flush(16);
@@ -1555,77 +1549,73 @@ void loop()
 
     if (gConfig.sensors.sct.enabled && gRuntime.sensors.sctReady)
     {
-      float amps = sctSensor.readCurrentACRms();
+      float rawAmps = sctSensor.readCurrentACRms();
       logger.logf("iot.sct.current %.3fA pin=%d rated=%.0f\n",
-                  amps, gConfig.sensors.sct.pin, gConfig.sensors.sct.ratedAmps);
+                  rawAmps, gConfig.sensors.sct.pin, gConfig.sensors.sct.ratedAmps);
       sctSensor.serialOutAdcDebug(); // for debug only
-    }
-  }
 
-  if (gConfig.sensors.sct.enabled && gRuntime.sensors.sctReady)
-  {
-    float amps = fabsf(sctSensor.readCurrentACRms());
+      float amps = fabsf(rawAmps);
+      bool pumpState = (amps > gConfig.sensors.sct.onThresholdAmps);
 
-    bool pumpState = (amps > gConfig.sensors.sct.onThresholdAmps);
-
-    if (sctFirstRun || pumpState != sctLastPumpState || pumpState)
-    {
-      MessagePublisher::publishPumpState(
-          mqClient,
-          pumpState,
-          amps,
-          gConfig.sensors.sct);
-
-      sctLastPumpState = pumpState;
-      sctFirstRun = false;
-    }
-  }
-
-  if (gConfig.sensors.w1.enabled && gRuntime.sensors.w1Ready)
-  {
-    temptSensor.requestTemperatures();
-    TemperatureReading *readings = temptSensor.getTemperatureReadings(gConfig.sensors.w1); // todo:performance: move declaration outside of the esp loop
-    const size_t w1DeviceCount =
-        gConfig.sensors.w1.devices.size() < static_cast<size_t>(MAX_READINGS)
-            ? gConfig.sensors.w1.devices.size()
-            : static_cast<size_t>(MAX_READINGS);
-
-    for (size_t i = 0; i < w1DeviceCount; i++)
-    {
-      // Check if the reading is valid, e.g., by checking if the name is not empty
-      if (!readings[i].name.isEmpty())
+      if (sctFirstRun || pumpState != sctLastPumpState || pumpState)
       {
-        MessagePublisher::publishTemperature(
+        MessagePublisher::publishPumpState(
             mqClient,
-            readings[i].value,
-            gConfig.sensors.w1.devices[i]);
+            pumpState,
+            amps,
+            gConfig.sensors.sct);
+
+        sctLastPumpState = pumpState;
+        sctFirstRun = false;
       }
     }
-  }
 
-  if (gConfig.sensors.acs.enabled && gRuntime.sensors.acsReady)
-  {
-    float amps = fabs(readACS712Current());
-    logger.log(amps);
-    logger.log(" amps\n");
-
-    bool pumpState = (amps > gConfig.sensors.acs.onThresholdAmps);
-
-    if (pumpState)
+    if (gConfig.sensors.w1.enabled && gRuntime.sensors.w1Ready)
     {
-      logger.log("Pump ON\n");
+      temptSensor.requestTemperatures();
+      TemperatureReading *readings = temptSensor.getTemperatureReadings(gConfig.sensors.w1); // todo:performance: move declaration outside of the esp loop
+      const size_t w1DeviceCount =
+          gConfig.sensors.w1.devices.size() < static_cast<size_t>(MAX_READINGS)
+              ? gConfig.sensors.w1.devices.size()
+              : static_cast<size_t>(MAX_READINGS);
+
+      for (size_t i = 0; i < w1DeviceCount; i++)
+      {
+        // Check if the reading is valid, e.g., by checking if the name is not empty
+        if (!readings[i].name.isEmpty())
+        {
+          MessagePublisher::publishTemperature(
+              mqClient,
+              readings[i].value,
+              gConfig.sensors.w1.devices[i]);
+        }
+      }
     }
-    else
-    {
-      logger.log("Pump OFF\n");
-    }
 
-    if (firstRun || pumpState != lastPumpState || pumpState)
+    if (gConfig.sensors.acs.enabled && gRuntime.sensors.acsReady)
     {
-      // Only publish if the pump state changed ...i don't like hiding the visibility of being OFF, but too much data
-      MessagePublisher::publishPumpState(mqClient, pumpState, amps, gConfig.sensors.acs);
-      lastPumpState = pumpState; // Update the last known state
-      firstRun = false;
+      float amps = fabs(readACS712Current());
+      logger.log(amps);
+      logger.log(" amps\n");
+
+      bool pumpState = (amps > gConfig.sensors.acs.onThresholdAmps);
+
+      if (pumpState)
+      {
+        logger.log("Pump ON\n");
+      }
+      else
+      {
+        logger.log("Pump OFF\n");
+      }
+
+      if (firstRun || pumpState != lastPumpState || pumpState)
+      {
+        // Only publish if the pump state changed ...i don't like hiding the visibility of being OFF, but too much data
+        MessagePublisher::publishPumpState(mqClient, pumpState, amps, gConfig.sensors.acs);
+        lastPumpState = pumpState; // Update the last known state
+        firstRun = false;
+      }
     }
   }
 }
