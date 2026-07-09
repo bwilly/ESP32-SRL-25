@@ -186,3 +186,39 @@ void MessagePublisher::publishPumpState(PubSubClient &client, bool isOn, float a
 
     client.publish(topic.c_str(), buffer);
 }
+
+void MessagePublisher::publishBooleanState(PubSubClient &client,
+                                           const char *name,
+                                           const char *topicSuffix,
+                                           bool value,
+                                           const SensorMetadata &metadata) {
+    const size_t capacity = JSON_OBJECT_SIZE(16);
+    DynamicJsonDocument doc(capacity);
+    const String topic = buildTopic(metadata, topicSuffix);
+
+    if (!metadata.asset.empty()) {
+        doc["bn"] = metadata.asset.c_str();
+    }
+    doc["n"] = name;
+    doc["u"] = "bool";
+    doc["v"] = value ? 1 : 0;
+    doc["ut"] = (int)time(nullptr);
+    addMetadataFields(doc, metadata);
+
+    char buffer[256];
+    serializeJson(doc, buffer);
+
+    logger.logf("Publishing the following to msg broker: %s\n", buffer);
+
+    if (!client.connected()) {
+        logger.log("MQTT client disconnected before publish!");
+        return;
+    }
+
+    bool ok = client.publish(topic.c_str(), buffer);
+    if (ok) {
+        logger.log("Boolean msg pub ok \n");
+    } else {
+        logger.log("Boolean msg pub FAIL \n");
+    }
+}

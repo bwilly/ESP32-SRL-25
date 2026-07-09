@@ -10,6 +10,11 @@ public:
     static void publishHumidity(PubSubClient &client, float humidity, const SensorMetadata &metadata);
     // static void publishPumpState(PubSubClient &client, bool isOn, const String &location);
     static void publishPumpState(PubSubClient &client, bool isOn, float amps, const SensorMetadata &metadata);
+    static void publishBooleanState(PubSubClient &client,
+                                    const char *name,
+                                    const char *topicSuffix,
+                                    bool value,
+                                    const SensorMetadata &metadata);
 
 private:
     static String buildTopic(const SensorMetadata &metadata, const char *topicSuffix);

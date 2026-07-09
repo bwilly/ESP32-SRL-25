@@ -84,6 +84,7 @@
 #include "OtaUpdate.h"
 #include "CHT832xSensor.h"
 #include "SCT_SRL.h"
+#include "XKC-Y26-PNP_SRL.h"
 
 #include "version.h"
 // #include <TelnetStream.h>
@@ -116,6 +117,9 @@ EspLoggerAdapter coreLog(logger);
 // ---- Remote debug configuration ----
 constexpr uint16_t SRL_TELNET_PORT = 23;
 constexpr const char *SRL_TELNET_PASSWORD = "saltmeadow";
+constexpr size_t SRL_LOGGER_QUEUE_LEN = 32;
+constexpr size_t SRL_LOGGER_MSG_SIZE = 192;
+constexpr size_t SRL_LOGGER_FLUSH_MAX = SRL_LOGGER_QUEUE_LEN;
 
 constexpr const char *AP_SSID_PREFIX = "srl-sesp-";
 constexpr const char *AP_PASSWORD = "saltmeadow"; // >= 8 chars
@@ -151,7 +155,7 @@ StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 // String version = String(APP_VERSION) + "::" + APP_COMMIT_HASH + ":: TelnetBridge-removed";
 String version = String(APP_VERSION) + "::" +
                  APP_COMMIT_HASH + "::" +
-                 APP_BUILD_DATE + ":: v4: wifi stability (scan set), sensor subsystem readiness, topic; wifi timers, json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.";
+                 APP_BUILD_DATE + ":: v4: liquid level sensor support, (prev: wifi stability (scan set), sensor subsystem readiness, topic; wifi timers, json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.)";
 
 // trying to identify cause of unreliable dht22 readings
 
@@ -212,6 +216,8 @@ unsigned long lastPublishTime_humidityCHT = 0;
 // SCT pump state tracking
 static bool sctFirstRun = true;
 static bool sctLastPumpState = false;
+static bool xkcFirstRun[MAX_XKC_Y26_PNP_INSTANCES] = {true, true, true, true, true};
+static bool xkcLastDetected[MAX_XKC_Y26_PNP_INSTANCES] = {};
 // Defaults align with ConfigModel::Sct013Config defaults and will be overwritten from gConfig in setup().
 SctSensor sctSensor(32, 15.0f);
 
@@ -856,7 +862,7 @@ void setup()
   esp_log_level_set("wifi", ESP_LOG_VERBOSE);
 
   // Experimenting w/ different sizes. want larger to see json not truncated. but something is causing esp to hang. or at least the logger. not sure which yet. Feb18'26
-  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 32, 192);
+  logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, SRL_LOGGER_QUEUE_LEN, SRL_LOGGER_MSG_SIZE);
   // logger.begin(locationName.c_str(), SRL_TELNET_PASSWORD, SRL_TELNET_PORT, 64, 512);
 
   Serial.println("s:initSpiffs...");
@@ -949,7 +955,7 @@ void setupStationMode()
   ConfigMerge cm(coreLog, fs, fetch);
 
   logger.handle();
-  logger.flush(16);
+  logger.flush(SRL_LOGGER_FLUSH_MAX);
 
   const std::string mergedRemoteStr = FNAME_CONFIGREMOTE;
   const std::string bootstrapStr = FNAME_BOOTSTRAP;
@@ -965,7 +971,7 @@ void setupStationMode()
       err);
 
   logger.handle();
-  logger.flush(16);
+  logger.flush(SRL_LOGGER_FLUSH_MAX);
 
   if (!configFromJson(jsonString, gConfig))
   {
@@ -992,7 +998,7 @@ void setupStationMode()
   }
 
   logger.handle();
-  logger.flush(16);
+  logger.flush(SRL_LOGGER_FLUSH_MAX);
 
   logger.log("initDNS...\n");
   initDNS();
@@ -1042,6 +1048,15 @@ void setupStationMode()
     gRuntime.sensors.sctReady = true;
   }
 
+  for (size_t i = 0;
+       i < gConfig.sensors.xkc.size() && i < MAX_XKC_Y26_PNP_INSTANCES;
+       ++i)
+  {
+    const auto &xkc = gConfig.sensors.xkc[i];
+    if (xkc.enabled)
+      gRuntime.sensors.xkcReady[i] = setupXkcY26Pnp(i, xkc.pin, xkc.activeHigh);
+  }
+
   registerWebRoutesStation(server, gConfig);
 
   // uses path like server.on("/update")
@@ -1080,7 +1095,7 @@ void setupStationMode()
   logger.log("\nEntry setup loop complete.");
 
   logger.handle();
-  logger.flush(16);
+  logger.flush(SRL_LOGGER_FLUSH_MAX);
 }
 
 void setupAccessPointMode()
@@ -1164,6 +1179,21 @@ void serviceMqttConnection()
   const char *clientId = gIdentity.name();
 
   logger.log("Attempting MQTT connection...");
+  logger.log("MQTT target=");
+logger.log(gConfig.mqtt.server.c_str());
+logger.log(":");
+logger.log(String(gConfig.mqtt.port).c_str());
+logger.log(" clientId=");
+logger.log(clientId);
+logger.log(" localIP=");
+logger.log(WiFi.localIP().toString().c_str());
+logger.log(" gateway=");
+logger.log(WiFi.gatewayIP().toString().c_str());
+logger.log(" bssid=");
+logger.log(WiFi.BSSIDstr().c_str());
+logger.log(" rssi=");
+logger.log(WiFi.RSSI());
+logger.log("\n");
   if (mqClient.connect(clientId))
   {
     logger.log("connected\n");
@@ -1377,15 +1407,15 @@ void loop()
   const unsigned long mainIntervalMs =
       gConfig.timing.mainDelayMs < 500 ? 3000 : static_cast<unsigned long>(gConfig.timing.mainDelayMs);
 
+  logger.handle();
+  logger.flush(SRL_LOGGER_FLUSH_MAX);
+
   if (currentMillis - g_lastMainRunMs < mainIntervalMs)
   {
     // Not time to run main loop logic yet
     return;
   }
   g_lastMainRunMs = currentMillis;
-
-  logger.handle();
-  logger.flush(16);
 
   // Apply pending bootstrap config if any, delete main config to force fresh start on next boot, and reboot to apply new config
   if (g_bootstrapPending)
@@ -1450,7 +1480,7 @@ void loop()
       logger.log("Rebooting due to extended time in AP mode...");
       Serial.println("s:Rebooting due to extended time in AP mode...");
       logger.handle();
-      logger.flush(16);
+      logger.flush(SRL_LOGGER_FLUSH_MAX);
       delay(200);
       ESP.restart();
     }
@@ -1493,7 +1523,7 @@ void loop()
         Serial.println("s:WiFi remained disconnected in station mode; restarting ESP.");
         logger.log("WiFi: remained disconnected in station mode; restarting ESP\n");
         logger.handle();
-        logger.flush(16);
+        logger.flush(SRL_LOGGER_FLUSH_MAX);
         delay(200);
         ESP.restart();
       }
@@ -1507,6 +1537,7 @@ void loop()
     serviceMqttConnection();
 
     // @anti-pattern as compared to dhtEnabledValue? Maybe this is the bettr way and the dhtEnabledValue was mean for checkbox population? Mar4'25
+    // DHT temperature and humidity sensor support
     if (gConfig.sensors.dht.enabled && gRuntime.sensors.dhtReady)
     {
       float currentTemperature = readDHTTemperature();
@@ -1524,6 +1555,7 @@ void loop()
     }
 
     // Dec3'25
+    // temperature and humidity sensor (CHT832x) support
     if (gConfig.sensors.cht.enabled && gRuntime.sensors.chtReady)
     {
       float chtTemp = NAN;
@@ -1570,6 +1602,7 @@ void loop()
       }
     }
 
+    // W1 (DS18B20) temperature sensor support
     if (gConfig.sensors.w1.enabled && gRuntime.sensors.w1Ready)
     {
       temptSensor.requestTemperatures();
@@ -1592,6 +1625,7 @@ void loop()
       }
     }
 
+    // ACS712 current sensor support
     if (gConfig.sensors.acs.enabled && gRuntime.sensors.acsReady)
     {
       float amps = fabs(readACS712Current());
@@ -1615,6 +1649,41 @@ void loop()
         MessagePublisher::publishPumpState(mqClient, pumpState, amps, gConfig.sensors.acs);
         lastPumpState = pumpState; // Update the last known state
         firstRun = false;
+      }
+    }
+
+    // liquid level sensor (XKC-Y26-PNP) support
+    for (size_t i = 0;
+         i < gConfig.sensors.xkc.size() && i < MAX_XKC_Y26_PNP_INSTANCES;
+         ++i)
+    {
+      const auto &xkc = gConfig.sensors.xkc[i];
+      if (!xkc.enabled || !gRuntime.sensors.xkcReady[i])
+        continue;
+
+      XkcY26PnpReading reading = readXkcY26PnpReading(i);
+      bool detected = reading.detected;
+      logger.logf("XKC-Y26-PNP[%u] pin=%d asset=%s detected=%s activeCount=%u rawMask=0x%02X last=%s first=%s\n",
+                  static_cast<unsigned>(i),
+                  xkc.pin,
+                  xkc.asset.c_str(),
+                  detected ? "true" : "false",
+                  reading.activeCount,
+                  reading.rawMask,
+                  xkcLastDetected[i] ? "true" : "false",
+                  xkcFirstRun[i] ? "true" : "false");
+
+      if (xkcFirstRun[i] || detected != xkcLastDetected[i])
+      {
+        MessagePublisher::publishBooleanState(
+            mqClient,
+            "detected",
+            "level",
+            detected,
+            xkc);
+
+        xkcLastDetected[i] = detected;
+        xkcFirstRun[i] = false;
       }
     }
   }

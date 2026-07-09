@@ -8,6 +8,7 @@
 #include <map>
 #include "ParamMetadata.h"
 #include "CHT832xSensor.h"
+#include "XKC-Y26-PNP_SRL.h"
 using namespace std;
 
 #include "Logger.h"
@@ -59,6 +60,7 @@ struct SensorRuntimeState
     bool w1Ready = false;
     bool acsReady = false;
     bool sctReady = false;
+    bool xkcReady[MAX_XKC_Y26_PNP_INSTANCES] = {};
 };
 
 struct RuntimeState
