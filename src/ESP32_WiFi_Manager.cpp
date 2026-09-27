@@ -155,18 +155,20 @@ StaticJsonDocument<APP_CONFIG_JSON_CAPACITY> g_configSaveDoc;
 // String version = String(APP_VERSION) + "::" + APP_COMMIT_HASH + ":: TelnetBridge-removed";
 String version = String(APP_VERSION) + "::" +
                  APP_COMMIT_HASH + "::" +
-                 APP_BUILD_DATE + ":: v4: liquid level sensor support, (prev: wifi stability (scan set), sensor subsystem readiness, topic; wifi timers, json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.)";
+                 APP_BUILD_DATE + ":: v4: wifi hostname reg bugfix; liquid level sensor support";
 
-// trying to identify cause of unreliable dht22 readings
+                 // (prev: wifi stability (scan set), sensor subsystem readiness, topic; wifi timers, json-module, OTA fixed, w1, threshold. requires dups of modern shape on remote/ and remote/module for legacy upgrades.)";
 
-// Serial.println("Application Version: " APP_VERSION);
-// Serial.println("Commit Hash: " APP_COMMIT_HASH);
+                 // trying to identify cause of unreliable dht22 readings
 
-// MQTT Server details
-// const char *mqtt_server = "192.168.68.120"; // todo: change to config param
-// const int mqtt_port = 1883;                 // todo: change to config param
+                 // Serial.println("Application Version: " APP_VERSION);
+                 // Serial.println("Commit Hash: " APP_COMMIT_HASH);
 
-WiFiClient espClient;
+                 // MQTT Server details
+                 // const char *mqtt_server = "192.168.68.120"; // todo: change to config param
+                 // const int mqtt_port = 1883;                 // todo: change to config param
+
+                 WiFiClient espClient;
 PubSubClient mqClient(espClient);
 
 constexpr unsigned long MQTT_RECONNECT_INITIAL_DELAY_MS = 5000;
@@ -218,6 +220,7 @@ static bool sctFirstRun = true;
 static bool sctLastPumpState = false;
 static bool xkcFirstRun[MAX_XKC_Y26_PNP_INSTANCES] = {true, true, true, true, true};
 static bool xkcLastDetected[MAX_XKC_Y26_PNP_INSTANCES] = {};
+static unsigned long xkcLastPublishTime[MAX_XKC_Y26_PNP_INSTANCES] = {};
 // Defaults align with ConfigModel::Sct013Config defaults and will be overwritten from gConfig in setup().
 SctSensor sctSensor(32, 15.0f);
 
@@ -416,14 +419,13 @@ bool initWiFi()
     return false;
   }
 
-  Serial.println("s:Setting WiFi to WIFI_STA...");
-
   WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
-  WiFi.setAutoReconnect(true);
-  WiFi.disconnect(false, true);
-  delay(250);
+
+  // Fully stop Wi-Fi first
+  WiFi.mode(WIFI_MODE_NULL);
+  delay(100);
+
+  Serial.println("s:Setting WiFi to WIFI_STA...");
 
   // Set custom hostname
   if (!WiFi.setHostname(gIdentity.name()))
@@ -432,11 +434,19 @@ bool initWiFi()
   }
   else
   {
-    Serial.print("s:Setting DNS hostname to: ");
+    Serial.print("s:Setting DHCP hostname to: ");
     Serial.println(gIdentity.name());
   }
 
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+
+  WiFi.disconnect(false, true);
+  delay(250);
+
   WiFi.scanDelete();
 
   Serial.println("s:Connecting to Wi-Fi; trying visible mesh nodes by RSSI...");
@@ -493,6 +503,7 @@ bool initWiFi()
 
       if (status == WL_CONNECTED)
       {
+        WiFi.scanDelete();
         break;
       }
 
@@ -1180,20 +1191,20 @@ void serviceMqttConnection()
 
   logger.log("Attempting MQTT connection...");
   logger.log("MQTT target=");
-logger.log(gConfig.mqtt.server.c_str());
-logger.log(":");
-logger.log(String(gConfig.mqtt.port).c_str());
-logger.log(" clientId=");
-logger.log(clientId);
-logger.log(" localIP=");
-logger.log(WiFi.localIP().toString().c_str());
-logger.log(" gateway=");
-logger.log(WiFi.gatewayIP().toString().c_str());
-logger.log(" bssid=");
-logger.log(WiFi.BSSIDstr().c_str());
-logger.log(" rssi=");
-logger.log(WiFi.RSSI());
-logger.log("\n");
+  logger.log(gConfig.mqtt.server.c_str());
+  logger.log(":");
+  logger.log(String(gConfig.mqtt.port).c_str());
+  logger.log(" clientId=");
+  logger.log(clientId);
+  logger.log(" localIP=");
+  logger.log(WiFi.localIP().toString().c_str());
+  logger.log(" gateway=");
+  logger.log(WiFi.gatewayIP().toString().c_str());
+  logger.log(" bssid=");
+  logger.log(WiFi.BSSIDstr().c_str());
+  logger.log(" rssi=");
+  logger.log(WiFi.RSSI());
+  logger.log("\n");
   if (mqClient.connect(clientId))
   {
     logger.log("connected\n");
@@ -1216,6 +1227,12 @@ logger.log("\n");
 static void resetSensorRuntimeState()
 {
   gRuntime.sensors = SensorRuntimeState{};
+  for (size_t i = 0; i < MAX_XKC_Y26_PNP_INSTANCES; ++i)
+  {
+    xkcFirstRun[i] = true;
+    xkcLastDetected[i] = false;
+    xkcLastPublishTime[i] = 0;
+  }
 }
 
 void publishSimpleMessage()
@@ -1663,7 +1680,12 @@ void loop()
 
       XkcY26PnpReading reading = readXkcY26PnpReading(i);
       bool detected = reading.detected;
-      logger.logf("XKC-Y26-PNP[%u] pin=%d asset=%s detected=%s activeCount=%u rawMask=0x%02X last=%s first=%s\n",
+      const unsigned long xkcPublishIntervalMs =
+          gConfig.timing.publishIntervalMs < 0 ? 0UL : static_cast<unsigned long>(gConfig.timing.publishIntervalMs);
+      const unsigned long timeSinceLastPublish = currentMillis - xkcLastPublishTime[i];
+      const bool xkcPublishIntervalElapsed = timeSinceLastPublish >= xkcPublishIntervalMs;
+
+      logger.logf("XKC-Y26-PNP[%u] pin=%d asset=%s detected=%s activeCount=%u rawMask=0x%02X last=%s first=%s nextPublishMs=%lu\n",
                   static_cast<unsigned>(i),
                   xkc.pin,
                   xkc.asset.c_str(),
@@ -1671,9 +1693,10 @@ void loop()
                   reading.activeCount,
                   reading.rawMask,
                   xkcLastDetected[i] ? "true" : "false",
-                  xkcFirstRun[i] ? "true" : "false");
+                  xkcFirstRun[i] ? "true" : "false",
+                  xkcPublishIntervalElapsed ? 0UL : (xkcPublishIntervalMs - timeSinceLastPublish));
 
-      if (xkcFirstRun[i] || detected != xkcLastDetected[i])
+      if (xkcFirstRun[i] || detected != xkcLastDetected[i] || xkcPublishIntervalElapsed)
       {
         MessagePublisher::publishBooleanState(
             mqClient,
@@ -1683,6 +1706,7 @@ void loop()
             xkc);
 
         xkcLastDetected[i] = detected;
+        xkcLastPublishTime[i] = currentMillis;
         xkcFirstRun[i] = false;
       }
     }
